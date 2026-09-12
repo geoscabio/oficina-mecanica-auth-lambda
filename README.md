@@ -11,6 +11,7 @@ Este repositório faz parte da **Fase 3 do Tech Challenge FIAP** e evolui a arqu
 - [✨ Visão geral](#visao-geral)
 - [🎯 Objetivo da Lambda](#objetivo-da-lambda)
 - [🏗️ Arquitetura](#arquitetura)
+- [🧰 Tecnologias](#tecnologias)
 - [📁 Estrutura do repositório](#estrutura-do-repositorio)
 - [🔁 Fluxo de autenticação](#fluxo-de-autenticacao)
 - [📡 Contrato HTTP esperado](#contrato-http-esperado)
@@ -66,7 +67,7 @@ O projeto segue **Clean Architecture** e preserva os bounded contexts usados no 
 
 | Camada | Projeto | Responsabilidade |
 | --- | --- | --- |
-| ⚡ **Function** | `OficinaMecanica.AuthLambda.Function` | Adaptador Lambda, serialização JSON, mapeamento HTTP, bootstrap, DI e tratamento sanitizado de erros. |
+| ⚡ **Function** | `OficinaMecanica.AuthLambda.Function` | Adaptador Lambda, serialização JSON, mapeamento HTTP, composition root e tratamento sanitizado de erros. |
 | 🧠 **Application** | `OficinaMecanica.AuthLambda.Application` | Use case de autenticação, contratos, validação, `Result<T>` e respostas de aplicação. |
 | 💎 **Domain** | `OficinaMecanica.AuthLambda.Domain` | Value Object `CpfCnpj`, validação de CPF/CNPJ, mensagens e enums do contexto Atendimento. |
 | 🧱 **Infrastructure** | `OficinaMecanica.AuthLambda.Infrastructure` | Repository SQL parametrizado, geração de JWT, `JwtOptions` e integrações técnicas. |
@@ -81,6 +82,25 @@ O projeto segue **Clean Architecture** e preserva os bounded contexts usados no 
 | **DDD tático** | CPF/CNPJ é validado no domínio por Value Object. |
 | **Use Case** | A regra de autenticação fica centralizada na camada Application. |
 | **JWT compatível com a API** | Token emitido com issuer `oficina-mecanica-auth` e audience `oficina-mecanica-api`. |
+
+---
+
+<a id="tecnologias"></a>
+
+## 🧰 Tecnologias
+
+| Categoria | Tecnologias |
+| --- | --- |
+| Linguagem e plataforma | C#, .NET 10 |
+| Serverless | AWS Lambda |
+| Entrada HTTP planejada | Amazon API Gateway |
+| Banco de dados | SQL Server |
+| Acesso a dados | Microsoft.Data.SqlClient |
+| Segurança | JWT HMAC-SHA256 |
+| Validação | FluentValidation |
+| Testes | xUnit, FluentAssertions, Moq e Coverlet |
+| Qualidade | `dotnet format`, cobertura de testes e checagem de pacotes vulneráveis |
+| Governança | Git Flow e GitHub Rulesets |
 
 ---
 

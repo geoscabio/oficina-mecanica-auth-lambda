@@ -2,8 +2,10 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
-using OficinaMecanica.AuthLambda.Application.Autenticacao.Abstractions;
-namespace OficinaMecanica.AuthLambda.Infrastructure.Identidade;
+using OficinaMecanica.AuthLambda.Application.Identidade.Interfaces;
+using OficinaMecanica.AuthLambda.Infrastructure.Identidade.Options;
+
+namespace OficinaMecanica.AuthLambda.Infrastructure.Identidade.Services;
 
 public sealed class TokenService : ITokenService
 {

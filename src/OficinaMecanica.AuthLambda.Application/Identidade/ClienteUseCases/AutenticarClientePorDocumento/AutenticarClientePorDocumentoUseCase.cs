@@ -1,12 +1,13 @@
 using FluentValidation;
-using OficinaMecanica.AuthLambda.Application.Autenticacao.Abstractions;
 using OficinaMecanica.AuthLambda.Application.Common;
+using OficinaMecanica.AuthLambda.Application.Identidade.Interfaces;
+using OficinaMecanica.AuthLambda.Application.Identidade.Repositories;
 using OficinaMecanica.AuthLambda.Domain.Atendimento.Enums;
 using OficinaMecanica.AuthLambda.Domain.Atendimento.Messages;
 using OficinaMecanica.AuthLambda.Domain.Atendimento.ValueObjects;
 using OficinaMecanica.AuthLambda.Domain.Shared.Exceptions;
 
-namespace OficinaMecanica.AuthLambda.Application.Autenticacao;
+namespace OficinaMecanica.AuthLambda.Application.Identidade.ClienteUseCases.AutenticarClientePorDocumento;
 
 public sealed class AutenticarClientePorDocumentoUseCase(
     IClienteAutenticacaoRepository repositorio,

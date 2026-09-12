@@ -1,7 +1,7 @@
 using FluentValidation;
 using OficinaMecanica.AuthLambda.Domain.Atendimento.Messages;
 
-namespace OficinaMecanica.AuthLambda.Application.Autenticacao;
+namespace OficinaMecanica.AuthLambda.Application.Identidade.ClienteUseCases.AutenticarClientePorDocumento;
 
 public sealed class AutenticarClientePorDocumentoValidator
     : AbstractValidator<AutenticarClientePorDocumentoRequest>

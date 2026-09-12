@@ -1,5 +1,6 @@
 using System.Text;
-namespace OficinaMecanica.AuthLambda.Infrastructure.Identidade;
+
+namespace OficinaMecanica.AuthLambda.Infrastructure.Identidade.Options;
 
 public sealed class JwtOptions
 {

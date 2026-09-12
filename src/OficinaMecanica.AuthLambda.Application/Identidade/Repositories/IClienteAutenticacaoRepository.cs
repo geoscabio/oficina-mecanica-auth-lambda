@@ -1,6 +1,6 @@
 using OficinaMecanica.AuthLambda.Domain.Atendimento.ValueObjects;
 
-namespace OficinaMecanica.AuthLambda.Application.Autenticacao.Abstractions;
+namespace OficinaMecanica.AuthLambda.Application.Identidade.Repositories;
 
 public interface IClienteAutenticacaoRepository
 {

@@ -18,5 +18,7 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
-  <ItemGroup><ProjectReference Include="..\..\src\OficinaMecanica.AuthLambda.Function\OficinaMecanica.AuthLambda.Function.csproj" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OficinaMecanica.AuthLambda.Function\OficinaMecanica.AuthLambda.Function.csproj" />
+  </ItemGroup>
 </Project>

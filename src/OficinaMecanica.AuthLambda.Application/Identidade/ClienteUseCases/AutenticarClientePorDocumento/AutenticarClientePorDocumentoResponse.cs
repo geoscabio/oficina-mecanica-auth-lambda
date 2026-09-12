@@ -1,4 +1,4 @@
-namespace OficinaMecanica.AuthLambda.Application.Autenticacao;
+namespace OficinaMecanica.AuthLambda.Application.Identidade.ClienteUseCases.AutenticarClientePorDocumento;
 
 public sealed record AutenticarClientePorDocumentoResponse(
     string AccessToken,

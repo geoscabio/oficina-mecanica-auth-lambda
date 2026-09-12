@@ -1,8 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Amazon.Lambda.APIGatewayEvents;
-using OficinaMecanica.AuthLambda.Application.Autenticacao;
 using OficinaMecanica.AuthLambda.Application.Common;
+using OficinaMecanica.AuthLambda.Application.Identidade.ClienteUseCases.AutenticarClientePorDocumento;
+
 namespace OficinaMecanica.AuthLambda.Function;
 
 public sealed class Function
@@ -10,7 +11,7 @@ public sealed class Function
     private readonly AutenticarClientePorDocumentoUseCase _useCase;
 
     public Function()
-        : this(DependencyInjection.CriarUseCase())
+        : this(FunctionStartup.CriarUseCase())
     {
     }
 
@@ -26,10 +27,7 @@ public sealed class Function
             var input = Desserializar(request.Body);
             if (input is null)
             {
-                return Json(400, new ErrorResponse(
-                    "Requisição inválida.",
-                    TipoErro.Validacao,
-                    ["Requisição inválida."]));
+                return Json(400, CriarErroRequisicaoInvalida());
             }
 
             var result = await _useCase.ExecutarAsync(input, default);
@@ -43,13 +41,14 @@ public sealed class Function
         }
         catch (JsonException)
         {
-            return Json(400, new ErrorResponse("Requisição inválida.", TipoErro.Validacao, ["Requisição inválida."]));
+            return Json(400, CriarErroRequisicaoInvalida());
         }
         catch
         {
             return Json(500, new ErrorResponse("Erro interno inesperado.", TipoErro.ErroInterno));
         }
     }
+
     private static AutenticarClientePorDocumentoRequest? Desserializar(string? body)
     {
         if (string.IsNullOrWhiteSpace(body))
@@ -83,5 +82,13 @@ public sealed class Function
 
         options.Converters.Add(new JsonStringEnumConverter());
         return options;
+    }
+
+    private static ErrorResponse CriarErroRequisicaoInvalida()
+    {
+        return new ErrorResponse(
+            "Requisição inválida.",
+            TipoErro.Validacao,
+            ["Requisição inválida."]);
     }
 }

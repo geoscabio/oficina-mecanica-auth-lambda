@@ -1,10 +1,10 @@
 using System.Data;
 using Microsoft.Data.SqlClient;
-using OficinaMecanica.AuthLambda.Application.Autenticacao;
-using OficinaMecanica.AuthLambda.Application.Autenticacao.Abstractions;
-using OficinaMecanica.AuthLambda.Domain.Atendimento.ValueObjects;
+using OficinaMecanica.AuthLambda.Application.Identidade.Repositories;
 using OficinaMecanica.AuthLambda.Domain.Atendimento.Enums;
-namespace OficinaMecanica.AuthLambda.Infrastructure.Atendimento;
+using OficinaMecanica.AuthLambda.Domain.Atendimento.ValueObjects;
+
+namespace OficinaMecanica.AuthLambda.Infrastructure.Atendimento.Repositories;
 
 public sealed class SqlClienteAutenticacaoRepository : IClienteAutenticacaoRepository
 {
@@ -22,19 +22,23 @@ public sealed class SqlClienteAutenticacaoRepository : IClienteAutenticacaoRepos
         _connectionString = connectionString;
     }
 
-    public async Task<ClienteAutenticacao?> ObterAsync(CpfCnpj documento, CancellationToken ct)
+    public async Task<ClienteAutenticacao?> ObterAsync(CpfCnpj documento, CancellationToken cancellationToken)
     {
         await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(ct);
+        await connection.OpenAsync(cancellationToken);
+
         await using var command = new SqlCommand(Query, connection);
         command.Parameters.Add("@documento", SqlDbType.NVarChar, 14).Value = documento.Numero;
         command.Parameters.Add("@tipoDocumento", SqlDbType.Int).Value = (int)documento.Tipo;
-        await using var reader = await command.ExecuteReaderAsync(ct);
-        if (!await reader.ReadAsync(ct))
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
         {
             return null;
         }
 
-        return new ClienteAutenticacao(reader.GetGuid(0), (StatusCliente)reader.GetInt32(1));
+        return new ClienteAutenticacao(
+            reader.GetGuid(0),
+            (StatusCliente)reader.GetInt32(1));
     }
 }

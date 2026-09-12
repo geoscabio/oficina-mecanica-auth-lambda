@@ -1,9 +1,10 @@
 using Amazon.Lambda.APIGatewayEvents;
 using OficinaMecanica.AuthLambda.Function;
+using OficinaMecanica.AuthLambda.Function.Configuration;
 
 namespace OficinaMecanica.AuthLambda.Function.UnitTests;
 
-public sealed class BootstrapTests
+public sealed class FunctionStartupTests
 {
     [Fact]
     public async Task Construtor_padrao_com_configuracao_valida_monta_function_e_retorna_400_sem_banco()
@@ -47,9 +48,45 @@ public sealed class BootstrapTests
         using var environment = new EnvironmentScope(configuracaoValida: true);
         Environment.SetEnvironmentVariable("Jwt__ExpirationMinutes", null);
 
+        var configuration = AuthLambdaConfiguration.Carregar();
         var response = await new Function().Handler(new APIGatewayHttpApiV2ProxyRequest { Body = "{}" });
 
+        Assert.Equal(60, configuration.JwtOptions.ExpirationMinutes);
         Assert.Equal(400, response.StatusCode);
+    }
+
+    [Fact]
+    public void Expiracao_invalida_usa_default_60()
+    {
+        using var environment = new EnvironmentScope(configuracaoValida: true);
+        Environment.SetEnvironmentVariable("Jwt__ExpirationMinutes", "0");
+
+        var configuration = AuthLambdaConfiguration.Carregar();
+
+        Assert.Equal(60, configuration.JwtOptions.ExpirationMinutes);
+    }
+
+    [Fact]
+    public void FunctionStartup_cria_use_case_com_configuracao_valida()
+    {
+        using var environment = new EnvironmentScope(configuracaoValida: true);
+
+        var useCase = FunctionStartup.CriarUseCase();
+
+        Assert.NotNull(useCase);
+    }
+
+    [Fact]
+    public void Configuracao_valida_retorna_connection_string_e_jwt_options()
+    {
+        using var environment = new EnvironmentScope(configuracaoValida: true);
+
+        var configuration = AuthLambdaConfiguration.Carregar();
+
+        Assert.Contains("Server=(local)", configuration.ConnectionString);
+        Assert.Equal("oficina-mecanica-auth", configuration.JwtOptions.Issuer);
+        Assert.Equal("oficina-mecanica-api", configuration.JwtOptions.Audience);
+        Assert.Equal(60, configuration.JwtOptions.ExpirationMinutes);
     }
 
     private sealed class EnvironmentScope : IDisposable

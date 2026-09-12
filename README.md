@@ -67,7 +67,7 @@ O projeto segue **Clean Architecture** e preserva os bounded contexts usados no 
 
 | Camada | Projeto | Responsabilidade |
 | --- | --- | --- |
-| ⚡ **Function** | `OficinaMecanica.AuthLambda.Function` | Adaptador Lambda, serialização JSON, mapeamento HTTP, composition root e tratamento sanitizado de erros. |
+| ⚡ **Function** | `OficinaMecanica.AuthLambda.Function` | Adaptador Lambda, serialização JSON, mapeamento HTTP, inicialização da Lambda, injeção de dependências e tratamento sanitizado de erros. |
 | 🧠 **Application** | `OficinaMecanica.AuthLambda.Application` | Use case de autenticação, contratos, validação, `Result<T>` e respostas de aplicação. |
 | 💎 **Domain** | `OficinaMecanica.AuthLambda.Domain` | Value Object `CpfCnpj`, validação de CPF/CNPJ, mensagens e enums do contexto Atendimento. |
 | 🧱 **Infrastructure** | `OficinaMecanica.AuthLambda.Infrastructure` | Repository SQL parametrizado, geração de JWT, `JwtOptions` e integrações técnicas. |

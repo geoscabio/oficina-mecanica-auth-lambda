@@ -1,4 +1,5 @@
 using FluentValidation.Results;
+
 namespace OficinaMecanica.AuthLambda.Application.Common;
 
 public static class ValidationResultExtensions

@@ -1,12 +1,13 @@
 using OficinaMecanica.AuthLambda.Domain.Atendimento.Enums;
 using OficinaMecanica.AuthLambda.Domain.Atendimento.Messages;
 using OficinaMecanica.AuthLambda.Domain.Shared.Exceptions;
+
 namespace OficinaMecanica.AuthLambda.Domain.Atendimento.ValueObjects;
 
 public sealed record CpfCnpj
 {
-    private static readonly int[] PrimeiroDigitoCnpjPesos = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-    private static readonly int[] SegundoDigitoCnpjPesos = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    private static readonly int[] PrimeiroDigitoCnpjPesos = new[] { 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2 };
+    private static readonly int[] SegundoDigitoCnpjPesos = new[] { 6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2 };
 
     private CpfCnpj(string numero, TipoDocumento tipo)
     {
@@ -14,23 +15,17 @@ public sealed record CpfCnpj
         Tipo = tipo;
     }
 
-    public string Numero
-    {
-        get;
-    }
-
-    public TipoDocumento Tipo
-    {
-        get;
-    }
+    public string Numero { get; }
+    public TipoDocumento Tipo { get; }
 
     public static CpfCnpj Criar(string numero)
     {
-        var normalizado = Normalizar(numero);
-        return normalizado.Length switch
+        var numeroNormalizado = Normalizar(numero);
+
+        return numeroNormalizado.Length switch
         {
-            11 when CpfValido(normalizado) => new(normalizado, TipoDocumento.CPF),
-            14 when CnpjValido(normalizado) => new(normalizado, TipoDocumento.CNPJ),
+            11 when CpfValido(numeroNormalizado) => new CpfCnpj(numeroNormalizado, TipoDocumento.CPF),
+            14 when CnpjValido(numeroNormalizado) => new CpfCnpj(numeroNormalizado, TipoDocumento.CNPJ),
             _ => throw new DomainException(ClienteErrorMessages.DocumentoInvalido)
         };
     }
@@ -73,35 +68,35 @@ public sealed record CpfCnpj
             && numero[13] == DigitoParaChar(segundoDigito);
     }
 
+    private static int CalcularDigito(string baseNumero, int pesoInicial)
+    {
+        var soma = 0;
+
+        for (var i = 0; i < baseNumero.Length; i++)
+        {
+            soma += (baseNumero[i] - '0') * (pesoInicial - i);
+        }
+
+        var resto = soma % 11;
+        return resto < 2 ? 0 : 11 - resto;
+    }
+
+    private static int CalcularDigitoCnpj(string baseNumero, int[] pesos)
+    {
+        var soma = 0;
+
+        for (var i = 0; i < baseNumero.Length; i++)
+        {
+            soma += (baseNumero[i] - '0') * pesos[i];
+        }
+
+        var resto = soma % 11;
+        return resto < 2 ? 0 : 11 - resto;
+    }
+
     private static bool TodosDigitosIguais(string numero)
     {
         return numero.All(digito => digito == numero[0]);
-    }
-
-    private static int CalcularDigito(string numero, int pesoInicial)
-    {
-        var soma = 0;
-
-        for (var indice = 0; indice < numero.Length; indice++)
-        {
-            soma += (numero[indice] - '0') * (pesoInicial - indice);
-        }
-
-        var resto = soma % 11;
-        return resto < 2 ? 0 : 11 - resto;
-    }
-
-    private static int CalcularDigitoCnpj(string numero, int[] pesos)
-    {
-        var soma = 0;
-
-        for (var indice = 0; indice < numero.Length; indice++)
-        {
-            soma += (numero[indice] - '0') * pesos[indice];
-        }
-
-        var resto = soma % 11;
-        return resto < 2 ? 0 : 11 - resto;
     }
 
     private static char DigitoParaChar(int digito)

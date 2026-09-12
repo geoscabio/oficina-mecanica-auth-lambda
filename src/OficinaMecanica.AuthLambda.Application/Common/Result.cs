@@ -9,20 +9,9 @@ public sealed class Result<T>
         Erro = erro;
     }
 
-    public bool Sucesso
-    {
-        get;
-    }
-
-    public T? Valor
-    {
-        get;
-    }
-
-    public ErrorResponse? Erro
-    {
-        get;
-    }
+    public bool Sucesso { get; }
+    public T? Valor { get; }
+    public ErrorResponse? Erro { get; }
 
     public static Result<T> Ok(T valor)
     {

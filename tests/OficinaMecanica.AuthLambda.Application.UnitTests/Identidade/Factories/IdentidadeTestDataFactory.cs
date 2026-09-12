@@ -1,4 +1,5 @@
 using OficinaMecanica.AuthLambda.Application.Identidade.ClienteUseCases.AutenticarClientePorDocumento;
+using OficinaMecanica.AuthLambda.Application.Identidade.Models;
 using OficinaMecanica.AuthLambda.Application.Identidade.Repositories;
 using OficinaMecanica.AuthLambda.Domain.Atendimento.Enums;
 
@@ -10,6 +11,7 @@ internal static class IdentidadeTestDataFactory
     public const string DocumentoCpfNormalizado = "52998224725";
     public const string DocumentoCnpjValido = "04.252.011/0001-10";
     public const string TokenPadrao = "token";
+    public const int ExpiresInPadrao = 1800;
 
     public static readonly Guid ClienteIdPadrao = Guid.Parse("7c44f1de-f89d-4d96-a7d9-b2422a7d8f6e");
 
@@ -26,5 +28,10 @@ internal static class IdentidadeTestDataFactory
     public static ClienteAutenticacao CriarClienteInativo(Guid? clienteId = null)
     {
         return new ClienteAutenticacao(clienteId ?? ClienteIdPadrao, StatusCliente.Inativo);
+    }
+
+    public static TokenGerado CriarTokenGerado(string accessToken = TokenPadrao, int expiresIn = ExpiresInPadrao)
+    {
+        return new TokenGerado(accessToken, expiresIn);
     }
 }

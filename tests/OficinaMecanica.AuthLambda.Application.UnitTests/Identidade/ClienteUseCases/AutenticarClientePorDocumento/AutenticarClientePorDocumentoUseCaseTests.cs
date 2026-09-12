@@ -3,6 +3,7 @@ using Moq;
 using OficinaMecanica.AuthLambda.Application.Common;
 using OficinaMecanica.AuthLambda.Application.Identidade.ClienteUseCases.AutenticarClientePorDocumento;
 using OficinaMecanica.AuthLambda.Application.Identidade.Interfaces;
+using OficinaMecanica.AuthLambda.Application.Identidade.Models;
 using OficinaMecanica.AuthLambda.Application.Identidade.Repositories;
 using OficinaMecanica.AuthLambda.Application.UnitTests.Identidade.Factories;
 using OficinaMecanica.AuthLambda.Domain.Atendimento.ValueObjects;
@@ -150,12 +151,13 @@ public sealed class AutenticarClientePorDocumentoUseCaseTests
     }
 
     [Fact]
-    public async Task Dado_DocumentoValidoDeClienteAtivo_Quando_AutenticarClientePorDocumento_Entao_DeveRetornarToken()
+    public async Task Dado_DocumentoValidoDeClienteAtivo_Quando_AutenticarClientePorDocumento_Entao_DeveRetornarExpiresInDoTokenService()
     {
         // Arrange
         var cliente = IdentidadeTestDataFactory.CriarClienteAtivo();
         var repositorio = CriarRepositorio(cliente);
-        var tokenService = CriarTokenService(IdentidadeTestDataFactory.TokenPadrao);
+        var token = IdentidadeTestDataFactory.CriarTokenGerado();
+        var tokenService = CriarTokenService(token);
         var useCase = CriarUseCase(repositorio, tokenService);
         var request = IdentidadeTestDataFactory.CriarRequestValido();
 
@@ -165,9 +167,9 @@ public sealed class AutenticarClientePorDocumentoUseCaseTests
         // Assert
         resultado.Sucesso.Should().BeTrue();
         resultado.Valor.Should().NotBeNull();
-        resultado.Valor!.AccessToken.Should().Be(IdentidadeTestDataFactory.TokenPadrao);
+        resultado.Valor!.AccessToken.Should().Be(token.AccessToken);
         resultado.Valor.TokenType.Should().Be("Bearer");
-        resultado.Valor.ExpiresIn.Should().Be(3600);
+        resultado.Valor.ExpiresIn.Should().Be(token.ExpiresIn);
 
         repositorio.Verify(
             repo => repo.ObterAsync(It.IsAny<CpfCnpj>(), It.IsAny<CancellationToken>()),
@@ -199,7 +201,7 @@ public sealed class AutenticarClientePorDocumentoUseCaseTests
         return repositorio;
     }
 
-    private static Mock<ITokenService> CriarTokenService(string token)
+    private static Mock<ITokenService> CriarTokenService(TokenGerado token)
     {
         var tokenService = new Mock<ITokenService>();
 

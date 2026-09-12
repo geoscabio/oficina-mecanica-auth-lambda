@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
 using OficinaMecanica.AuthLambda.Application.Identidade.Interfaces;
+using OficinaMecanica.AuthLambda.Application.Identidade.Models;
 using OficinaMecanica.AuthLambda.Infrastructure.Identidade.Options;
 
 namespace OficinaMecanica.AuthLambda.Infrastructure.Identidade.Services;
@@ -16,7 +17,7 @@ public sealed class TokenService : ITokenService
         _options = options;
     }
 
-    public string GerarToken(Guid clienteId)
+    public TokenGerado GerarToken(Guid clienteId)
     {
         _options.Validar();
 
@@ -36,6 +37,9 @@ public sealed class TokenService : ITokenService
             expires: DateTime.UtcNow.AddMinutes(_options.ExpirationMinutes),
             signingCredentials: credentials);
 
-        return new JwtSecurityTokenHandler().WriteToken(token);
+        var accessToken = new JwtSecurityTokenHandler().WriteToken(token);
+        var expiresIn = _options.ExpirationMinutes * 60;
+
+        return new TokenGerado(accessToken, expiresIn);
     }
 }

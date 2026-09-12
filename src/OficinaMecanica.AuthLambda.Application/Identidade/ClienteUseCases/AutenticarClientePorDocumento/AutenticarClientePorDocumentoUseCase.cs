@@ -45,11 +45,13 @@ public sealed class AutenticarClientePorDocumentoUseCase(
                     TipoErro.NaoAutorizado);
             }
 
+            var token = tokens.GerarToken(cliente.Id);
+
             return Result<AutenticarClientePorDocumentoResponse>.Ok(
                 new AutenticarClientePorDocumentoResponse(
-                    tokens.GerarToken(cliente.Id),
+                    token.AccessToken,
                     "Bearer",
-                    3600));
+                    token.ExpiresIn));
         }
         catch (DomainException exception)
         {

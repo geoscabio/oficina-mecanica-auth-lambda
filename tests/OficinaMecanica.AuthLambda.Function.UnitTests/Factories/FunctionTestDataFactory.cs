@@ -1,4 +1,5 @@
 using Amazon.Lambda.APIGatewayEvents;
+using OficinaMecanica.AuthLambda.Application.Identidade.Models;
 using OficinaMecanica.AuthLambda.Application.Identidade.Repositories;
 using OficinaMecanica.AuthLambda.Domain.Atendimento.Enums;
 
@@ -10,6 +11,7 @@ internal static class FunctionTestDataFactory
     public const string DocumentoCpfValidoComMascara = "529.982.247-25";
     public const string DocumentoInvalido = "123";
     public const string TokenPadrao = "token";
+    public const int ExpiresInPadrao = 1800;
     public const string BodyVazio = "";
     public const string JsonInvalido = "{";
     public const string BodySemDocumento = "{}";
@@ -35,5 +37,10 @@ internal static class FunctionTestDataFactory
     public static ClienteAutenticacao CriarClienteInativo(Guid? clienteId = null)
     {
         return new ClienteAutenticacao(clienteId ?? ClienteIdPadrao, StatusCliente.Inativo);
+    }
+
+    public static TokenGerado CriarTokenGerado(string accessToken = TokenPadrao, int expiresIn = ExpiresInPadrao)
+    {
+        return new TokenGerado(accessToken, expiresIn);
     }
 }

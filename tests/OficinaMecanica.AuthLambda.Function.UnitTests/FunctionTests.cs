@@ -71,7 +71,7 @@ public sealed class FunctionTests
         response.Headers["Content-Type"].Should().Be("application/json");
         json.RootElement.GetProperty("accessToken").GetString().Should().Be(FunctionTestDataFactory.TokenPadrao);
         json.RootElement.GetProperty("tokenType").GetString().Should().Be("Bearer");
-        json.RootElement.GetProperty("expiresIn").GetInt32().Should().Be(3600);
+        json.RootElement.GetProperty("expiresIn").GetInt32().Should().Be(FunctionTestDataFactory.ExpiresInPadrao);
         response.Body.Should().NotContain(FunctionTestDataFactory.DocumentoCpfValidoComMascara);
     }
 
@@ -105,7 +105,7 @@ public sealed class FunctionTests
 
         tokenService
             .Setup(service => service.GerarToken(It.IsAny<Guid>()))
-            .Returns(FunctionTestDataFactory.TokenPadrao);
+            .Returns(FunctionTestDataFactory.CriarTokenGerado());
 
         return CriarFunction(repositorio, tokenService);
     }

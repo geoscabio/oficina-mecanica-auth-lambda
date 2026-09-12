@@ -1,5 +1,5 @@
 using Amazon.Lambda.APIGatewayEvents;
-using OficinaMecanica.AuthLambda.Function;
+using FluentAssertions;
 using OficinaMecanica.AuthLambda.Function.Configuration;
 
 namespace OficinaMecanica.AuthLambda.Function.UnitTests;
@@ -7,86 +7,112 @@ namespace OficinaMecanica.AuthLambda.Function.UnitTests;
 public sealed class FunctionStartupTests
 {
     [Fact]
-    public async Task Construtor_padrao_com_configuracao_valida_monta_function_e_retorna_400_sem_banco()
+    public async Task Dado_ConfiguracaoValida_Quando_CriarFunctionPadrao_Entao_DeveMontarFunctionERetornarBadRequestSemAcessarBanco()
     {
+        // Arrange
         using var environment = new EnvironmentScope(configuracaoValida: true);
+        var request = new APIGatewayHttpApiV2ProxyRequest { Body = string.Empty };
 
+        // Act
         var function = new Function();
+        var response = await function.Handler(request);
 
-        var response = await function.Handler(new APIGatewayHttpApiV2ProxyRequest { Body = string.Empty });
-
-        Assert.Equal(400, response.StatusCode);
-        Assert.Equal("application/json", response.Headers["Content-Type"]);
-        Assert.Contains("Validacao", response.Body);
+        // Assert
+        response.StatusCode.Should().Be(400);
+        response.Headers["Content-Type"].Should().Be("application/json");
+        response.Body.Should().Contain("Validacao");
     }
 
     [Fact]
-    public void Construtor_padrao_com_secret_invalido_falha_sem_expor_valor()
+    public void Dado_ConfiguracaoJwtInvalida_Quando_CriarFunction_Entao_DeveFalharSemExporSecret()
     {
+        // Arrange
         using var environment = new EnvironmentScope(configuracaoValida: true);
         Environment.SetEnvironmentVariable("Jwt__Secret", "segredo-curto");
 
-        var exception = Assert.Throws<InvalidOperationException>(() => new Function());
+        // Act
+        var acao = () => new Function();
 
-        Assert.DoesNotContain("segredo-curto", exception.Message);
+        // Assert
+        acao.Should()
+            .Throw<InvalidOperationException>()
+            .Which.Message.Should().NotContain("segredo-curto");
     }
 
     [Fact]
-    public void Construtor_padrao_sem_connection_string_falha_de_forma_segura()
+    public void Dado_ConnectionStringAusente_Quando_CriarFunction_Entao_DeveFalharDeFormaSegura()
     {
+        // Arrange
         using var environment = new EnvironmentScope(configuracaoValida: true);
         Environment.SetEnvironmentVariable("ConnectionStrings__SqlServer", null);
 
-        var exception = Assert.Throws<InvalidOperationException>(() => new Function());
+        // Act
+        var acao = () => new Function();
 
-        Assert.DoesNotContain("Password", exception.Message);
+        // Assert
+        acao.Should()
+            .Throw<InvalidOperationException>()
+            .Which.Message.Should().NotContain("Password");
     }
 
     [Fact]
-    public async Task Expiracao_ausente_usa_default_e_bootstrap_permanece_funcional()
+    public async Task Dado_ExpiracaoAusente_Quando_CarregarConfiguracao_Entao_DeveUsarDefault60EFunctionPermaneceFuncional()
     {
+        // Arrange
         using var environment = new EnvironmentScope(configuracaoValida: true);
         Environment.SetEnvironmentVariable("Jwt__ExpirationMinutes", null);
+        var request = new APIGatewayHttpApiV2ProxyRequest { Body = "{}" };
 
+        // Act
         var configuration = AuthLambdaConfiguration.Carregar();
-        var response = await new Function().Handler(new APIGatewayHttpApiV2ProxyRequest { Body = "{}" });
+        var response = await new Function().Handler(request);
 
-        Assert.Equal(60, configuration.JwtOptions.ExpirationMinutes);
-        Assert.Equal(400, response.StatusCode);
+        // Assert
+        configuration.JwtOptions.ExpirationMinutes.Should().Be(60);
+        response.StatusCode.Should().Be(400);
     }
 
     [Fact]
-    public void Expiracao_invalida_usa_default_60()
+    public void Dado_ExpiracaoInvalida_Quando_CarregarConfiguracao_Entao_DeveUsarDefault60()
     {
+        // Arrange
         using var environment = new EnvironmentScope(configuracaoValida: true);
         Environment.SetEnvironmentVariable("Jwt__ExpirationMinutes", "0");
 
+        // Act
         var configuration = AuthLambdaConfiguration.Carregar();
 
-        Assert.Equal(60, configuration.JwtOptions.ExpirationMinutes);
+        // Assert
+        configuration.JwtOptions.ExpirationMinutes.Should().Be(60);
     }
 
     [Fact]
-    public void FunctionStartup_cria_use_case_com_configuracao_valida()
+    public void Dado_ConfiguracaoValida_Quando_CriarUseCasePeloFunctionStartup_Entao_DeveRetornarUseCase()
     {
+        // Arrange
         using var environment = new EnvironmentScope(configuracaoValida: true);
 
+        // Act
         var useCase = FunctionStartup.CriarUseCase();
 
-        Assert.NotNull(useCase);
+        // Assert
+        useCase.Should().NotBeNull();
     }
 
     [Fact]
-    public void Configuracao_valida_retorna_connection_string_e_jwt_options()
+    public void Dado_ConfiguracaoValida_Quando_CarregarConfiguracao_Entao_DeveRetornarConnectionStringEJwtOptions()
     {
+        // Arrange
         using var environment = new EnvironmentScope(configuracaoValida: true);
 
+        // Act
         var configuration = AuthLambdaConfiguration.Carregar();
 
-        Assert.Contains("Server=(local)", configuration.ConnectionString);
-        Assert.Equal("oficina-mecanica-auth", configuration.JwtOptions.Issuer);
-        Assert.Equal("oficina-mecanica-api", configuration.JwtOptions.Audience);
-        Assert.Equal(60, configuration.JwtOptions.ExpirationMinutes);
+        // Assert
+        configuration.ConnectionString.Should().Contain("Server=(local)");
+        configuration.JwtOptions.Issuer.Should().Be("oficina-mecanica-auth");
+        configuration.JwtOptions.Audience.Should().Be("oficina-mecanica-api");
+        configuration.JwtOptions.ExpirationMinutes.Should().Be(60);
     }
 
     private sealed class EnvironmentScope : IDisposable

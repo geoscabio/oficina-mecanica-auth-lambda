@@ -1,16 +1,19 @@
+using FluentAssertions;
 using FluentValidation;
 using Microsoft.Extensions.DependencyInjection;
 using OficinaMecanica.AuthLambda.Application.Identidade.ClienteUseCases.AutenticarClientePorDocumento;
 
-namespace OficinaMecanica.AuthLambda.Application.UnitTests;
+namespace OficinaMecanica.AuthLambda.Application.UnitTests.Common;
 
 public sealed class DependencyInjectionTests
 {
     [Fact]
-    public void AddAuthLambdaApplication_registra_validator_e_use_case()
+    public void Dado_ServiceCollectionVazia_Quando_AdicionarApplication_Entao_DeveRegistrarValidatorEUseCase()
     {
+        // Arrange
         var services = new ServiceCollection();
 
+        // Act
         services.AddAuthLambdaApplication();
 
         var validatorDescriptor = services.Single(
@@ -19,9 +22,11 @@ public sealed class DependencyInjectionTests
         var useCaseDescriptor = services.Single(
             service => service.ServiceType == typeof(AutenticarClientePorDocumentoUseCase));
 
-        Assert.Equal(ServiceLifetime.Singleton, validatorDescriptor.Lifetime);
-        Assert.Equal(ServiceLifetime.Singleton, useCaseDescriptor.Lifetime);
-        Assert.Equal(typeof(AutenticarClientePorDocumentoValidator), validatorDescriptor.ImplementationType);
-        Assert.Equal(typeof(AutenticarClientePorDocumentoUseCase), useCaseDescriptor.ImplementationType);
+        // Assert
+        validatorDescriptor.Lifetime.Should().Be(ServiceLifetime.Singleton);
+        validatorDescriptor.ImplementationType.Should().Be(typeof(AutenticarClientePorDocumentoValidator));
+
+        useCaseDescriptor.Lifetime.Should().Be(ServiceLifetime.Singleton);
+        useCaseDescriptor.ImplementationType.Should().Be(typeof(AutenticarClientePorDocumentoUseCase));
     }
 }

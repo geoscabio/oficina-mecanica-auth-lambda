@@ -31,12 +31,19 @@ public sealed class Result<T>
 
     public static Result<T> Falha(string mensagem, TipoErro tipo)
     {
-        return new Result<T>(false, default, new ErrorResponse(mensagem, tipo));
+        return new Result<T>(false, default!, new ErrorResponse(mensagem, tipo));
     }
 
     public static Result<T> Falha(IReadOnlyCollection<string> mensagens, TipoErro tipo)
     {
-        var mensagemPrincipal = mensagens.FirstOrDefault() ?? "Requisição inválida.";
-        return new Result<T>(false, default, new ErrorResponse(mensagemPrincipal, tipo, mensagens));
+        var mensagensNormalizadas = mensagens
+            .Where(mensagem => !string.IsNullOrWhiteSpace(mensagem))
+            .Distinct()
+            .ToArray();
+
+        var mensagemPrincipal = mensagensNormalizadas.FirstOrDefault()
+            ?? "Requisição inválida.";
+
+        return new Result<T>(false, default!, new ErrorResponse(mensagemPrincipal, tipo, mensagensNormalizadas));
     }
 }

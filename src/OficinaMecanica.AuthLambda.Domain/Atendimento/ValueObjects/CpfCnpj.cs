@@ -23,9 +23,10 @@ public sealed record CpfCnpj
     {
         get;
     }
+
     public static CpfCnpj Criar(string numero)
     {
-        var normalizado = new string((numero ?? string.Empty).Where(char.IsDigit).ToArray());
+        var normalizado = Normalizar(numero);
         return normalizado.Length switch
         {
             11 when CpfValido(normalizado) => new(normalizado, TipoDocumento.CPF),
@@ -33,20 +34,43 @@ public sealed record CpfCnpj
             _ => throw new DomainException(ClienteErrorMessages.DocumentoInvalido)
         };
     }
+
+    private static string Normalizar(string numero)
+    {
+        if (string.IsNullOrWhiteSpace(numero))
+        {
+            return string.Empty;
+        }
+
+        return new string(numero.Where(char.IsDigit).ToArray());
+    }
+
     private static bool CpfValido(string numero)
     {
         if (TodosDigitosIguais(numero))
+        {
             return false;
-        return CalcularDigito(numero[..9], 10) == numero[9] - '0'
-            && CalcularDigito(numero[..10], 11) == numero[10] - '0';
+        }
+
+        var primeiroDigito = CalcularDigito(numero[..9], 10);
+        var segundoDigito = CalcularDigito(numero[..10], 11);
+
+        return numero[9] == DigitoParaChar(primeiroDigito)
+            && numero[10] == DigitoParaChar(segundoDigito);
     }
 
     private static bool CnpjValido(string numero)
     {
         if (TodosDigitosIguais(numero))
+        {
             return false;
-        return CalcularDigito(numero[..12], PrimeiroDigitoCnpjPesos) == numero[12] - '0'
-            && CalcularDigito(numero[..13], SegundoDigitoCnpjPesos) == numero[13] - '0';
+        }
+
+        var primeiroDigito = CalcularDigitoCnpj(numero[..12], PrimeiroDigitoCnpjPesos);
+        var segundoDigito = CalcularDigitoCnpj(numero[..13], SegundoDigitoCnpjPesos);
+
+        return numero[12] == DigitoParaChar(primeiroDigito)
+            && numero[13] == DigitoParaChar(segundoDigito);
     }
 
     private static bool TodosDigitosIguais(string numero)
@@ -63,10 +87,11 @@ public sealed record CpfCnpj
             soma += (numero[indice] - '0') * (pesoInicial - indice);
         }
 
-        return Ajustar(soma);
+        var resto = soma % 11;
+        return resto < 2 ? 0 : 11 - resto;
     }
 
-    private static int CalcularDigito(string numero, int[] pesos)
+    private static int CalcularDigitoCnpj(string numero, int[] pesos)
     {
         var soma = 0;
 
@@ -75,11 +100,12 @@ public sealed record CpfCnpj
             soma += (numero[indice] - '0') * pesos[indice];
         }
 
-        return Ajustar(soma);
-    }
-    private static int Ajustar(int soma)
-    {
         var resto = soma % 11;
         return resto < 2 ? 0 : 11 - resto;
+    }
+
+    private static char DigitoParaChar(int digito)
+    {
+        return (char)('0' + digito);
     }
 }

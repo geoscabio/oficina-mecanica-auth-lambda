@@ -7,7 +7,7 @@ using OficinaMecanica.AuthLambda.Infrastructure.Identidade;
 
 namespace OficinaMecanica.AuthLambda.Function;
 
-internal static class Bootstrap
+internal static class DependencyInjection
 {
     public static AutenticarClientePorDocumentoUseCase CriarUseCase()
     {

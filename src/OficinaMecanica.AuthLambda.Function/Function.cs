@@ -10,7 +10,7 @@ public sealed class Function
     private readonly AutenticarClientePorDocumentoUseCase _useCase;
 
     public Function()
-        : this(Bootstrap.CriarUseCase())
+        : this(DependencyInjection.CriarUseCase())
     {
     }
 
@@ -50,6 +50,38 @@ public sealed class Function
             return Json(500, new ErrorResponse("Erro interno inesperado.", TipoErro.ErroInterno));
         }
     }
-    private static AutenticarClientePorDocumentoRequest? Desserializar(string? body) => string.IsNullOrWhiteSpace(body) ? null : JsonSerializer.Deserialize<AutenticarClientePorDocumentoRequest>(body, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
-    private static APIGatewayHttpApiV2ProxyResponse Json(int status, object body) => new() { StatusCode = status, Headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" }, Body = JsonSerializer.Serialize(body, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, Converters = { new JsonStringEnumConverter() } }) };
+    private static AutenticarClientePorDocumentoRequest? Desserializar(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<AutenticarClientePorDocumentoRequest>(body, CriarOpcoesJson());
+    }
+
+    private static APIGatewayHttpApiV2ProxyResponse Json(int status, object body)
+    {
+        return new APIGatewayHttpApiV2ProxyResponse
+        {
+            StatusCode = status,
+            Headers = new Dictionary<string, string>
+            {
+                ["Content-Type"] = "application/json"
+            },
+            Body = JsonSerializer.Serialize(body, CriarOpcoesJson())
+        };
+    }
+
+    private static JsonSerializerOptions CriarOpcoesJson()
+    {
+        var options = new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            PropertyNameCaseInsensitive = true
+        };
+
+        options.Converters.Add(new JsonStringEnumConverter());
+        return options;
+    }
 }

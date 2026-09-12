@@ -14,7 +14,14 @@ public sealed class FunctionTests
     [InlineData("")]
     [InlineData("{}")]
     [InlineData("{\"documento\":\"123\"}")]
-    public async Task Entrada_invalida_retorna_400(string body) => Assert.Equal(400, (await Criar().Handler(new() { Body = body })).StatusCode);
+    public async Task Entrada_invalida_retorna_400(string body)
+    {
+        var request = new APIGatewayHttpApiV2ProxyRequest { Body = body };
+
+        var response = await Criar().Handler(request);
+
+        Assert.Equal(400, response.StatusCode);
+    }
     [Fact]
     public async Task Inexistente_e_inativo_retornam_401_iguais()
     {
@@ -45,7 +52,11 @@ public sealed class FunctionTests
     [Fact]
     public async Task Excecao_inesperada_retorna_500_sanitizado()
     {
-        var response = await new Function(new AutenticarClientePorDocumentoUseCase(new Repo(null, true), new Token(), new AutenticarClientePorDocumentoValidator())).Handler(new()
+        var useCase = new AutenticarClientePorDocumentoUseCase(
+            new Repo(null, true),
+            new Token(),
+            new AutenticarClientePorDocumentoValidator());
+        var response = await new Function(useCase).Handler(new()
         {
             Body = "{\"documento\":\"52998224725\"}"
         });
@@ -53,13 +64,32 @@ public sealed class FunctionTests
         Assert.DoesNotContain("segredo interno", response.Body);
         Assert.Contains("ErroInterno", response.Body);
     }
-    private static Function Criar(ClienteAutenticacao? cliente = null) => new(new AutenticarClientePorDocumentoUseCase(new Repo(cliente), new Token(), new AutenticarClientePorDocumentoValidator()));
+    private static Function Criar(ClienteAutenticacao? cliente = null)
+    {
+        var useCase = new AutenticarClientePorDocumentoUseCase(
+            new Repo(cliente),
+            new Token(),
+            new AutenticarClientePorDocumentoValidator());
+
+        return new Function(useCase);
+    }
     private sealed class Repo(ClienteAutenticacao? cliente, bool falhar = false) : IClienteAutenticacaoRepository
     {
-        public Task<ClienteAutenticacao?> ObterAsync(CpfCnpj documento, CancellationToken ct) => falhar ? throw new InvalidOperationException("segredo interno") : Task.FromResult(cliente);
+        public Task<ClienteAutenticacao?> ObterAsync(CpfCnpj documento, CancellationToken ct)
+        {
+            if (falhar)
+            {
+                throw new InvalidOperationException("segredo interno");
+            }
+
+            return Task.FromResult(cliente);
+        }
     }
     private sealed class Token : ITokenService
     {
-        public string GerarToken(Guid clienteId) => "token";
+        public string GerarToken(Guid clienteId)
+        {
+            return "token";
+        }
     }
 }

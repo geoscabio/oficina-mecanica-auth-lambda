@@ -3,5 +3,12 @@ namespace OficinaMecanica.AuthLambda.Application.Common;
 
 public static class ValidationResultExtensions
 {
-    public static IReadOnlyCollection<string> ObterMensagensErro(this ValidationResult result) => result.Errors.Select(x => x.ErrorMessage).Where(x => !string.IsNullOrWhiteSpace(x)).Distinct().ToArray();
+    public static IReadOnlyCollection<string> ObterMensagensErro(this ValidationResult result)
+    {
+        return result.Errors
+            .Select(error => error.ErrorMessage)
+            .Where(mensagem => !string.IsNullOrWhiteSpace(mensagem))
+            .Distinct()
+            .ToArray();
+    }
 }

@@ -5,14 +5,35 @@ using Microsoft.IdentityModel.Tokens;
 using OficinaMecanica.AuthLambda.Application.Autenticacao.Abstractions;
 namespace OficinaMecanica.AuthLambda.Infrastructure.Identidade;
 
-public sealed class TokenService(JwtOptions options) : ITokenService
+public sealed class TokenService : ITokenService
 {
+    private readonly JwtOptions _options;
+
+    public TokenService(JwtOptions options)
+    {
+        _options = options;
+    }
+
     public string GerarToken(Guid clienteId)
     {
-        options.Validar();
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(options.Secret));
-        var claims = new[] { new Claim(JwtRegisteredClaimNames.Sub, clienteId.ToString()), new Claim("cliente_id", clienteId.ToString()), new Claim("role", "Cliente"), new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()) };
-        var token = new JwtSecurityToken(options.Issuer, options.Audience, claims, expires: DateTime.UtcNow.AddMinutes(options.ExpirationMinutes), signingCredentials: new SigningCredentials(key, SecurityAlgorithms.HmacSha256));
+        _options.Validar();
+
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_options.Secret));
+        var claims = new[]
+        {
+            new Claim(JwtRegisteredClaimNames.Sub, clienteId.ToString()),
+            new Claim("cliente_id", clienteId.ToString()),
+            new Claim("role", "Cliente"),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+        };
+        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
+        var token = new JwtSecurityToken(
+            issuer: _options.Issuer,
+            audience: _options.Audience,
+            claims: claims,
+            expires: DateTime.UtcNow.AddMinutes(_options.ExpirationMinutes),
+            signingCredentials: credentials);
+
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 }

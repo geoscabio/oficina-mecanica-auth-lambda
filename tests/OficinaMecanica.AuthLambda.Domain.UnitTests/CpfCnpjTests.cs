@@ -22,5 +22,8 @@ public sealed class CpfCnpjTests
     [InlineData("11111111111")]
     [InlineData("123")]
     [InlineData("52998224724")]
-    public void Criar_rejeita_documento_invalido(string? valor) => Assert.Throws<DomainException>(() => CpfCnpj.Criar(valor!));
+    public void Criar_rejeita_documento_invalido(string? valor)
+    {
+        Assert.Throws<DomainException>(() => CpfCnpj.Criar(valor!));
+    }
 }

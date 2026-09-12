@@ -52,7 +52,13 @@ public sealed class AutenticarClientePorDocumentoUseCaseTests
         Assert.Equal(3600, result.Valor.ExpiresIn);
         Assert.Equal(1, token.Chamadas);
     }
-    private static AutenticarClientePorDocumentoUseCase Criar(Repositorio repo, Tokens token) => new(repo, token, new AutenticarClientePorDocumentoValidator());
+    private static AutenticarClientePorDocumentoUseCase Criar(Repositorio repo, Tokens token)
+    {
+        return new AutenticarClientePorDocumentoUseCase(
+            repo,
+            token,
+            new AutenticarClientePorDocumentoValidator());
+    }
     private sealed class Repositorio(ClienteAutenticacao? cliente = null) : IClienteAutenticacaoRepository
     {
         public int Chamadas

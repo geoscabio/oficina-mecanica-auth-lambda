@@ -20,6 +20,8 @@ env:
   DOTNET_VERSION: "10.0.x"
   SOLUTION_PATH: "OficinaMecanica.AuthLambda.slnx"
   FUNCTION_PROJECT_PATH: "src/OficinaMecanica.AuthLambda.Function/OficinaMecanica.AuthLambda.Function.csproj"
+  TF_WORKING_DIRECTORY: infra/terraform/environments/dev
+  TERRAFORM_VERSION: "1.15.8"
   COVERAGE_THRESHOLD: "90"
 
 jobs:
@@ -315,6 +317,31 @@ jobs:
             throw "Vulnerable packages were found."
           }
 
+  validate_terraform:
+    name: "🌐 05.1 · Validar Terraform da Auth Lambda"
+    needs: detect_ci_scope
+    if: needs.detect_ci_scope.outputs.ci_required == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "📥 01 · Baixar código do repositório"
+        uses: actions/checkout@v7
+
+      - name: "🛠️ 02 · Instalar Terraform"
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: "🎨 03 · Verificar formatação Terraform"
+        run: terraform fmt -check -recursive infra/terraform
+
+      - name: "🚀 04 · Inicializar Terraform sem backend"
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" init -backend=false -input=false
+
+      - name: "🔍 05 · Validar configuração Terraform"
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" validate
+
   package_lambda:
     name: "📦 06 · Empacotar Lambda"
     needs: detect_ci_scope
@@ -399,6 +426,7 @@ jobs:
       - verify_code_style
       - test_solution
       - verify_vulnerable_packages
+      - validate_terraform
       - package_lambda
     if: always()
 
@@ -425,6 +453,7 @@ jobs:
             "${{ needs.verify_code_style.result }}"
             "${{ needs.test_solution.result }}"
             "${{ needs.verify_vulnerable_packages.result }}"
+            "${{ needs.validate_terraform.result }}"
             "${{ needs.package_lambda.result }}"
           )
 

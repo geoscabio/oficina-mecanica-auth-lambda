@@ -159,6 +159,38 @@ jobs:
             exit 1
           fi
 
+          python - <<'PY'
+          import os
+          import sys
+
+          jwt_secret = os.environ["AUTH_LAMBDA_JWT_SECRET"]
+          jwt_issuer = os.environ["AUTH_LAMBDA_JWT_ISSUER"]
+          jwt_audience = os.environ["AUTH_LAMBDA_JWT_AUDIENCE"]
+          jwt_expiration_minutes = os.environ["AUTH_LAMBDA_JWT_EXPIRATION_MINUTES"]
+
+          if len(jwt_secret.encode("utf-8")) < 32:
+              print("::error::AUTH_LAMBDA_JWT_SECRET deve ter pelo menos 32 bytes UTF-8.")
+              sys.exit(1)
+
+          if not jwt_issuer.strip():
+              print("::error::AUTH_LAMBDA_JWT_ISSUER não pode estar vazio.")
+              sys.exit(1)
+
+          if not jwt_audience.strip():
+              print("::error::AUTH_LAMBDA_JWT_AUDIENCE não pode estar vazio.")
+              sys.exit(1)
+
+          try:
+              expiration_minutes = int(jwt_expiration_minutes)
+          except ValueError:
+              print("::error::AUTH_LAMBDA_JWT_EXPIRATION_MINUTES deve ser um inteiro maior que zero.")
+              sys.exit(1)
+
+          if expiration_minutes <= 0:
+              print("::error::AUTH_LAMBDA_JWT_EXPIRATION_MINUTES deve ser um inteiro maior que zero.")
+              sys.exit(1)
+          PY
+
       - name: "🚦 06 · Validar dependências da VPC e RDS"
         if: env.TERRAFORM_ACTION == 'apply'
         run: |

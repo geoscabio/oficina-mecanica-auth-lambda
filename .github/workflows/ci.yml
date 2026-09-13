@@ -318,7 +318,7 @@ jobs:
           }
 
   validate_terraform:
-    name: "🌐 06 · Validar Terraform da Auth Lambda"
+    name: "🌐 05.1 · Validar Terraform da Auth Lambda"
     needs: detect_ci_scope
     if: needs.detect_ci_scope.outputs.ci_required == 'true'
     runs-on: ubuntu-latest

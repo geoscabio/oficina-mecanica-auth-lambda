@@ -1,0 +1,581 @@
+name: "☁️ AWS Deploy"
+run-name: "☁️ Executar deploy AWS da Auth Lambda em ${{ inputs.environment_name }}"
+
+on:
+  workflow_call:
+    inputs:
+      environment_name:
+        description: "GitHub Environment usado pelo deploy."
+        required: true
+        type: string
+    outputs:
+      terraform_action:
+        description: "Ação Terraform resolvida: apply ou destroy."
+        value: ${{ jobs.resolve_action.outputs.terraform_action }}
+
+env:
+  TF_WORKING_DIRECTORY: infra/terraform/environments/dev
+  TERRAFORM_VERSION: "1.15.8"
+  DOTNET_VERSION: "10.0.x"
+  SOLUTION_PATH: "OficinaMecanica.AuthLambda.slnx"
+  FUNCTION_PROJECT_PATH: "src/OficinaMecanica.AuthLambda.Function/OficinaMecanica.AuthLambda.Function.csproj"
+  LAMBDA_PACKAGE_PATH: "artifacts/auth-lambda/oficina-mecanica-auth-lambda.zip"
+  SSM_VPC_PREFIX: /oficina-mecanica/development/vpc
+  SSM_VPC_STATUS_PARAMETER: /oficina-mecanica/development/status/vpc
+  SSM_RDS_PREFIX: /oficina-mecanica/development/rds
+  SSM_RDS_STATUS_PARAMETER: /oficina-mecanica/development/status/rds
+  SSM_AUTH_LAMBDA_PREFIX: /oficina-mecanica/development/auth-lambda
+  SSM_AUTH_LAMBDA_STATUS_PARAMETER: /oficina-mecanica/development/status/auth-lambda
+
+jobs:
+  resolve_action:
+    name: "🔎 01 · Resolver ação do Terraform"
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment_name }}
+    outputs:
+      terraform_action: ${{ steps.resolve_terraform_action.outputs.terraform_action }}
+
+    steps:
+      - name: "📥 01 · Baixar código do repositório"
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: "🚦 02 · Ler terraform-action.env e validar troca segura de destroy"
+        id: resolve_terraform_action
+        env:
+          GITHUB_BEFORE: ${{ github.event.before }}
+          GITHUB_AFTER: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          control_file="$TF_WORKING_DIRECTORY/terraform-action.env"
+
+          if [ ! -f "$control_file" ]; then
+            echo "::error::Arquivo $control_file não encontrado. Este repositório exige ação explícita do Terraform."
+            exit 1
+          fi
+
+          terraform_action="$(grep -E '^[[:space:]]*TERRAFORM_ACTION[[:space:]]*=' "$control_file" | tail -n 1 | cut -d '=' -f 2- | tr -d '\r' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' || true)"
+
+          case "$terraform_action" in
+            apply|destroy)
+              ;;
+            *)
+              echo "::error::TERRAFORM_ACTION '$terraform_action' inválido. Use 'apply' ou 'destroy'."
+              exit 1
+              ;;
+          esac
+
+          if [ "$terraform_action" = "destroy" ]; then
+            destroy_control_changed="false"
+
+            if [ -z "$GITHUB_BEFORE" ] || [ "$GITHUB_BEFORE" = "0000000000000000000000000000000000000000" ]; then
+              destroy_control_changed="true"
+            elif git diff --name-only "$GITHUB_BEFORE" "$GITHUB_AFTER" -- "$control_file" | grep -qx "$control_file"; then
+              destroy_control_changed="true"
+            fi
+
+            if [ "$destroy_control_changed" != "true" ]; then
+              echo "::error::TERRAFORM_ACTION=destroy está configurado, mas terraform-action.env não mudou neste push. Abra um PR dedicado de destroy."
+              exit 1
+            fi
+
+            echo "::warning::TERRAFORM_ACTION=destroy detectado. Esta execução destruirá a Auth Lambda gerenciada pelo Terraform."
+          fi
+
+          if [ "$terraform_action" = "apply" ]; then
+            echo "::notice::>>> AÇÃO DECIDIDA: APPLY (criar/atualizar Auth Lambda) <<<"
+          else
+            echo "::notice::>>> AÇÃO DECIDIDA: DESTROY (destruir Auth Lambda) <<<"
+          fi
+
+          echo "terraform_action=$terraform_action" >> "$GITHUB_OUTPUT"
+
+  prepare_and_plan:
+    name: "📋 02 · Preparar pacote e gerar plano do Terraform"
+    needs: resolve_action
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment_name }}
+    outputs:
+      function_name_before_destroy: ${{ steps.capture_destroy_context.outputs.function_name_before_destroy }}
+      function_arn: ${{ steps.read_plan_values.outputs.function_arn }}
+      function_name: ${{ steps.read_plan_values.outputs.function_name }}
+      security_group_id: ${{ steps.read_plan_values.outputs.security_group_id }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TERRAFORM_ACTION: ${{ needs.resolve_action.outputs.terraform_action }}
+      AUTH_LAMBDA_CONNECTION_STRING: ${{ secrets.AUTH_LAMBDA_CONNECTION_STRING }}
+      AUTH_LAMBDA_JWT_SECRET: ${{ secrets.AUTH_LAMBDA_JWT_SECRET }}
+      AUTH_LAMBDA_EXECUTION_ROLE_NAME: ${{ vars.AUTH_LAMBDA_EXECUTION_ROLE_NAME }}
+      AUTH_LAMBDA_JWT_ISSUER: ${{ vars.AUTH_LAMBDA_JWT_ISSUER || 'oficina-mecanica-auth' }}
+      AUTH_LAMBDA_JWT_AUDIENCE: ${{ vars.AUTH_LAMBDA_JWT_AUDIENCE || 'oficina-mecanica-api' }}
+      AUTH_LAMBDA_JWT_EXPIRATION_MINUTES: ${{ vars.AUTH_LAMBDA_JWT_EXPIRATION_MINUTES || '60' }}
+
+    steps:
+      - name: "📥 01 · Baixar código do repositório"
+        uses: actions/checkout@v7
+
+      - name: "🔑 02 · Configurar credenciais AWS"
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: "🛠️ 03 · Instalar SDK do .NET"
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: "🛠️ 04 · Instalar Terraform"
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: "✅ 05 · Validar configuração necessária"
+        run: |
+          set -euo pipefail
+
+          if [ "$TERRAFORM_ACTION" = "destroy" ]; then
+            echo "Skipping application secret validation because this run will destroy the Auth Lambda."
+            exit 0
+          fi
+
+          missing=""
+
+          for name in AUTH_LAMBDA_CONNECTION_STRING AUTH_LAMBDA_JWT_SECRET AUTH_LAMBDA_EXECUTION_ROLE_NAME; do
+            if [ -z "${!name}" ]; then
+              missing="$missing $name"
+            fi
+          done
+
+          if [ -n "$missing" ]; then
+            echo "::error::Configure no GitHub Environment development:$missing"
+            exit 1
+          fi
+
+      - name: "🚦 06 · Validar dependências da VPC e RDS"
+        if: env.TERRAFORM_ACTION == 'apply'
+        run: |
+          set -euo pipefail
+
+          vpc_status="$(aws ssm get-parameter --name "$SSM_VPC_STATUS_PARAMETER" --query 'Parameter.Value' --output text)"
+          if [ "$vpc_status" != "ready" ]; then
+            echo "::error::A VPC não está pronta. Esperado=ready Atual=$vpc_status"
+            exit 1
+          fi
+
+          rds_status="$(aws ssm get-parameter --name "$SSM_RDS_STATUS_PARAMETER" --query 'Parameter.Value' --output text)"
+          if [ "$rds_status" != "ready" ]; then
+            echo "::error::O RDS não está pronto. Esperado=ready Atual=$rds_status"
+            exit 1
+          fi
+
+          for parameter_name in \
+            "$SSM_VPC_PREFIX/vpc_id" \
+            "$SSM_VPC_PREFIX/private_subnet_ids" \
+            "$SSM_RDS_PREFIX/security_group_id"; do
+            parameter_value="$(aws ssm get-parameter --name "$parameter_name" --query 'Parameter.Value' --output text)"
+
+            if [ -z "$parameter_value" ] || [ "$parameter_value" = "None" ]; then
+              echo "::error::Parâmetro SSM obrigatório ausente ou vazio: $parameter_name"
+              exit 1
+            fi
+          done
+
+          echo "Dependências de VPC e RDS validadas via SSM."
+
+      - name: "📦 07 · Restaurar cache do state Terraform"
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate
+            ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate.backup
+          key: tfstate-auth-lambda-${{ inputs.environment_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            tfstate-auth-lambda-${{ inputs.environment_name }}-
+
+      - name: "📚 08 · Resolver dependências da solução"
+        run: dotnet restore "$SOLUTION_PATH"
+
+      - name: "📤 09 · Publicar projeto da Function"
+        run: >
+          dotnet publish "$FUNCTION_PROJECT_PATH"
+          --configuration Release
+          --runtime linux-x64
+          --self-contained false
+          --output ./artifacts/auth-lambda/publish
+
+      - name: "🗜️ 10 · Compactar pacote da Lambda"
+        run: |
+          set -euo pipefail
+
+          publish_path="./artifacts/auth-lambda/publish"
+          zip_path="$LAMBDA_PACKAGE_PATH"
+
+          test -d "$publish_path" || { echo "::error::Diretório de publish não foi gerado."; exit 1; }
+
+          mkdir -p "$(dirname "$zip_path")"
+          (
+            cd "$publish_path"
+            zip -r "$GITHUB_WORKSPACE/$zip_path" .
+          )
+
+      - name: "✅ 11 · Validar pacote e calcular hash"
+        id: package
+        run: |
+          set -euo pipefail
+
+          test -f "$LAMBDA_PACKAGE_PATH" || { echo "::error::Pacote da Lambda não foi gerado."; exit 1; }
+
+          package_size="$(stat -c%s "$LAMBDA_PACKAGE_PATH")"
+          if [ "$package_size" -le 0 ]; then
+            echo "::error::Pacote da Lambda está vazio."
+            exit 1
+          fi
+
+          package_hash="$(openssl dgst -sha256 -binary "$LAMBDA_PACKAGE_PATH" | openssl base64 -A)"
+
+          echo "package_size=$package_size" >> "$GITHUB_OUTPUT"
+          echo "package_hash=$package_hash" >> "$GITHUB_OUTPUT"
+          echo "Pacote da Lambda gerado com $package_size bytes."
+
+      - name: "📝 12 · Escrever variáveis do Terraform"
+        env:
+          LAMBDA_PACKAGE_SOURCE_CODE_HASH: ${{ steps.package.outputs.package_hash }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          if [ "$TERRAFORM_ACTION" = "destroy" ]; then
+            connection_string="Server=destroy-only;Database=destroy-only;User Id=destroy-only;Password=DestroyOnly-2026!;TrustServerCertificate=True"
+            jwt_secret="destroy-only-placeholder-secret-with-at-least-32-bytes"
+            lambda_execution_role_name="${AUTH_LAMBDA_EXECUTION_ROLE_NAME:-DestroyOnlyRole}"
+          else
+            connection_string="$AUTH_LAMBDA_CONNECTION_STRING"
+            jwt_secret="$AUTH_LAMBDA_JWT_SECRET"
+            lambda_execution_role_name="$AUTH_LAMBDA_EXECUTION_ROLE_NAME"
+          fi
+
+          CONNECTION_STRING="$connection_string" \
+          JWT_SECRET="$jwt_secret" \
+          LAMBDA_EXECUTION_ROLE_NAME="$lambda_execution_role_name" \
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          values = {
+              "aws_region": os.environ["AWS_REGION"],
+              "lambda_execution_role_name": os.environ["LAMBDA_EXECUTION_ROLE_NAME"],
+              "lambda_package_file_path": "../../../../artifacts/auth-lambda/oficina-mecanica-auth-lambda.zip",
+              "lambda_package_source_code_hash": os.environ["LAMBDA_PACKAGE_SOURCE_CODE_HASH"],
+              "connection_string": os.environ["CONNECTION_STRING"],
+              "jwt_secret": os.environ["JWT_SECRET"],
+              "jwt_issuer": os.environ["AUTH_LAMBDA_JWT_ISSUER"],
+              "jwt_audience": os.environ["AUTH_LAMBDA_JWT_AUDIENCE"],
+              "jwt_expiration_minutes": int(os.environ["AUTH_LAMBDA_JWT_EXPIRATION_MINUTES"]),
+          }
+
+          target = Path(os.environ["TF_WORKING_DIRECTORY"]) / "zz_ci.auto.tfvars.json"
+          target.write_text(json.dumps(values), encoding="utf-8")
+          PY
+
+      - name: "🚀 13 · Inicializar Terraform"
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" init -input=false
+
+      - name: "🔍 14 · Validar configuração Terraform"
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" validate
+
+      - name: "🛡️ 15 · Capturar Auth Lambda atual antes do destroy"
+        id: capture_destroy_context
+        if: env.TERRAFORM_ACTION == 'destroy'
+        run: |
+          set -euo pipefail
+
+          function_name="$(terraform -chdir="$TF_WORKING_DIRECTORY" output -raw auth_lambda_function_name 2>/dev/null || true)"
+
+          if [ -z "$function_name" ]; then
+            function_name="$(aws ssm get-parameter --name "$SSM_AUTH_LAMBDA_PREFIX/function_name" --query 'Parameter.Value' --output text 2>/dev/null || true)"
+          fi
+
+          if [ -z "$function_name" ]; then
+            echo "::warning::Nome da Auth Lambda ausente no state/SSM. Continuando como recuperação de destroy parcial."
+          else
+            if aws lambda get-function-configuration --function-name "$function_name" --query 'FunctionName' --output text >/dev/null 2>&1; then
+              echo "Auth Lambda $function_name existe e será validada após destroy."
+            else
+              echo "::warning::Auth Lambda $function_name já está ausente. Continuando como recuperação de destroy parcial."
+            fi
+          fi
+
+          echo "function_name_before_destroy=$function_name" >> "$GITHUB_OUTPUT"
+
+      - name: "📐 16 · Gerar plano do Terraform (apply)"
+        if: env.TERRAFORM_ACTION == 'apply'
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" plan -input=false -out=tfplan
+
+      - name: "📐 16 · Gerar plano do Terraform (destroy)"
+        if: env.TERRAFORM_ACTION == 'destroy'
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" plan -destroy -input=false -out=tfplan
+
+      - name: "📖 17 · Ler outputs planejados quando disponíveis"
+        id: read_plan_values
+        if: env.TERRAFORM_ACTION == 'apply'
+        run: |
+          set -euo pipefail
+
+          function_arn="$(terraform -chdir="$TF_WORKING_DIRECTORY" output -raw auth_lambda_function_arn 2>/dev/null || true)"
+          function_name="$(terraform -chdir="$TF_WORKING_DIRECTORY" output -raw auth_lambda_function_name 2>/dev/null || true)"
+          security_group_id="$(terraform -chdir="$TF_WORKING_DIRECTORY" output -raw auth_lambda_security_group_id 2>/dev/null || true)"
+
+          echo "function_arn=$function_arn" >> "$GITHUB_OUTPUT"
+          echo "function_name=$function_name" >> "$GITHUB_OUTPUT"
+          echo "security_group_id=$security_group_id" >> "$GITHUB_OUTPUT"
+
+      - name: "⬆️ 18 · Publicar plano do Terraform como artefato"
+        uses: actions/upload-artifact@v7
+        with:
+          name: tfplan-auth-lambda-${{ github.run_id }}
+          path: ${{ env.TF_WORKING_DIRECTORY }}/tfplan
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: "⬆️ 19 · Publicar pacote da Lambda como artefato"
+        uses: actions/upload-artifact@v7
+        with:
+          name: auth-lambda-package-${{ github.run_id }}
+          path: ${{ env.LAMBDA_PACKAGE_PATH }}
+          retention-days: 1
+          if-no-files-found: error
+
+      - name: "🧹 20 · Remover variáveis sensíveis temporárias"
+        if: always()
+        run: rm -f "$TF_WORKING_DIRECTORY/zz_ci.auto.tfvars.json"
+
+  apply_or_destroy:
+    name: "☁️ 03 · Aplicar ou destruir Auth Lambda"
+    needs:
+      - resolve_action
+      - prepare_and_plan
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment_name }}
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+      TERRAFORM_ACTION: ${{ needs.resolve_action.outputs.terraform_action }}
+      AUTH_LAMBDA_CONNECTION_STRING: ${{ secrets.AUTH_LAMBDA_CONNECTION_STRING }}
+      AUTH_LAMBDA_JWT_SECRET: ${{ secrets.AUTH_LAMBDA_JWT_SECRET }}
+      AUTH_LAMBDA_EXECUTION_ROLE_NAME: ${{ vars.AUTH_LAMBDA_EXECUTION_ROLE_NAME }}
+      AUTH_LAMBDA_JWT_ISSUER: ${{ vars.AUTH_LAMBDA_JWT_ISSUER || 'oficina-mecanica-auth' }}
+      AUTH_LAMBDA_JWT_AUDIENCE: ${{ vars.AUTH_LAMBDA_JWT_AUDIENCE || 'oficina-mecanica-api' }}
+      AUTH_LAMBDA_JWT_EXPIRATION_MINUTES: ${{ vars.AUTH_LAMBDA_JWT_EXPIRATION_MINUTES || '60' }}
+      FUNCTION_NAME_BEFORE_DESTROY: ${{ needs.prepare_and_plan.outputs.function_name_before_destroy }}
+
+    steps:
+      - name: "📥 01 · Baixar código do repositório"
+        uses: actions/checkout@v7
+
+      - name: "🔑 02 · Configurar credenciais AWS"
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: "🛠️ 03 · Instalar Terraform"
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: "📦 04 · Restaurar cache do state Terraform"
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate
+            ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate.backup
+          key: tfstate-auth-lambda-${{ inputs.environment_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            tfstate-auth-lambda-${{ inputs.environment_name }}-
+
+      - name: "⬇️ 05 · Baixar plano do Terraform publicado"
+        uses: actions/download-artifact@v8
+        with:
+          name: tfplan-auth-lambda-${{ github.run_id }}
+          path: ${{ env.TF_WORKING_DIRECTORY }}
+
+      - name: "⬇️ 06 · Baixar pacote da Lambda planejado"
+        uses: actions/download-artifact@v8
+        with:
+          name: auth-lambda-package-${{ github.run_id }}
+          path: artifacts/auth-lambda
+
+      - name: "✅ 07 · Validar pacote baixado"
+        id: package
+        run: |
+          set -euo pipefail
+
+          test -f "$LAMBDA_PACKAGE_PATH" || { echo "::error::Pacote da Lambda não foi baixado no caminho esperado."; exit 1; }
+
+          package_size="$(stat -c%s "$LAMBDA_PACKAGE_PATH")"
+          if [ "$package_size" -le 0 ]; then
+            echo "::error::Pacote da Lambda está vazio."
+            exit 1
+          fi
+
+          package_hash="$(openssl dgst -sha256 -binary "$LAMBDA_PACKAGE_PATH" | openssl base64 -A)"
+          echo "package_hash=$package_hash" >> "$GITHUB_OUTPUT"
+          echo "Pacote planejado baixado com $package_size bytes."
+
+      - name: "📝 08 · Reescrever variáveis do Terraform"
+        env:
+          CONNECTION_STRING: ${{ secrets.AUTH_LAMBDA_CONNECTION_STRING }}
+          JWT_SECRET: ${{ secrets.AUTH_LAMBDA_JWT_SECRET }}
+          LAMBDA_EXECUTION_ROLE_NAME: ${{ vars.AUTH_LAMBDA_EXECUTION_ROLE_NAME }}
+          LAMBDA_PACKAGE_SOURCE_CODE_HASH: ${{ steps.package.outputs.package_hash }}
+        run: |
+          set -euo pipefail
+          umask 077
+
+          if [ "$TERRAFORM_ACTION" = "destroy" ]; then
+            connection_string="Server=destroy-only;Database=destroy-only;User Id=destroy-only;Password=DestroyOnly-2026!;TrustServerCertificate=True"
+            jwt_secret="destroy-only-placeholder-secret-with-at-least-32-bytes"
+            lambda_execution_role_name="${LAMBDA_EXECUTION_ROLE_NAME:-DestroyOnlyRole}"
+          else
+            connection_string="$CONNECTION_STRING"
+            jwt_secret="$JWT_SECRET"
+            lambda_execution_role_name="$LAMBDA_EXECUTION_ROLE_NAME"
+          fi
+
+          CONNECTION_STRING="$connection_string" \
+          JWT_SECRET="$jwt_secret" \
+          LAMBDA_EXECUTION_ROLE_NAME="$lambda_execution_role_name" \
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          values = {
+              "aws_region": os.environ["AWS_REGION"],
+              "lambda_execution_role_name": os.environ["LAMBDA_EXECUTION_ROLE_NAME"],
+              "lambda_package_file_path": "../../../../artifacts/auth-lambda/oficina-mecanica-auth-lambda.zip",
+              "lambda_package_source_code_hash": os.environ["LAMBDA_PACKAGE_SOURCE_CODE_HASH"],
+              "connection_string": os.environ["CONNECTION_STRING"],
+              "jwt_secret": os.environ["JWT_SECRET"],
+              "jwt_issuer": os.environ["AUTH_LAMBDA_JWT_ISSUER"],
+              "jwt_audience": os.environ["AUTH_LAMBDA_JWT_AUDIENCE"],
+              "jwt_expiration_minutes": int(os.environ["AUTH_LAMBDA_JWT_EXPIRATION_MINUTES"]),
+          }
+
+          target = Path(os.environ["TF_WORKING_DIRECTORY"]) / "zz_ci.auto.tfvars.json"
+          target.write_text(json.dumps(values), encoding="utf-8")
+          PY
+
+      - name: "🚀 09 · Inicializar Terraform"
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" init -input=false
+
+      - name: "✅ 10 · Aplicar plano do Terraform"
+        run: terraform -chdir="$TF_WORKING_DIRECTORY" apply -input=false -auto-approve tfplan
+
+      - name: "💾 11 · Salvar cache final do state Terraform"
+        if: always()
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate
+            ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate.backup
+          key: tfstate-auth-lambda-${{ inputs.environment_name }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: "🔎 12 · Validar Auth Lambda real após apply"
+        if: env.TERRAFORM_ACTION == 'apply'
+        run: |
+          set -euo pipefail
+
+          function_name="$(terraform -chdir="$TF_WORKING_DIRECTORY" output -raw auth_lambda_function_name)"
+          function_arn="$(terraform -chdir="$TF_WORKING_DIRECTORY" output -raw auth_lambda_function_arn)"
+          security_group_id="$(terraform -chdir="$TF_WORKING_DIRECTORY" output -raw auth_lambda_security_group_id)"
+
+          for attempt in $(seq 1 30); do
+            function_state="$(aws lambda get-function-configuration --function-name "$function_name" --query 'State' --output text)"
+
+            if [ "$function_state" = "Active" ]; then
+              break
+            fi
+
+            echo "Aguardando Lambda ficar Active. Tentativa $attempt/30. Estado atual: $function_state"
+            sleep 10
+          done
+
+          runtime="$(aws lambda get-function-configuration --function-name "$function_name" --query 'Runtime' --output text)"
+          role="$(aws lambda get-function-configuration --function-name "$function_name" --query 'Role' --output text)"
+          subnet_count="$(aws lambda get-function-configuration --function-name "$function_name" --query 'length(VpcConfig.SubnetIds)' --output text)"
+          security_group_count="$(aws lambda get-function-configuration --function-name "$function_name" --query 'length(VpcConfig.SecurityGroupIds)' --output text)"
+
+          test "$(aws lambda get-function-configuration --function-name "$function_name" --query 'State' --output text)" = "Active"
+          test "$runtime" = "dotnet10"
+          test -n "$role"
+          test "$subnet_count" -gt 0
+          test "$security_group_count" -gt 0
+
+          test "$(aws ssm get-parameter --name "$SSM_AUTH_LAMBDA_PREFIX/function_arn" --query 'Parameter.Value' --output text)" = "$function_arn"
+          test "$(aws ssm get-parameter --name "$SSM_AUTH_LAMBDA_PREFIX/function_name" --query 'Parameter.Value' --output text)" = "$function_name"
+          test "$(aws ssm get-parameter --name "$SSM_AUTH_LAMBDA_PREFIX/security_group_id" --query 'Parameter.Value' --output text)" = "$security_group_id"
+          test "$(aws ssm get-parameter --name "$SSM_AUTH_LAMBDA_STATUS_PARAMETER" --query 'Parameter.Value' --output text)" = "ready"
+
+          echo "Auth Lambda $function_name validada com sucesso na AWS e no SSM."
+
+      - name: "🔎 12 · Validar remoção real após destroy"
+        if: env.TERRAFORM_ACTION == 'destroy'
+        run: |
+          set -euo pipefail
+
+          assert_resource_absent() {
+            local resource_label="$1"
+            shift
+            local command_output
+
+            if command_output="$("$@" 2>&1)"; then
+              echo "::error::${resource_label} ainda existe após destroy."
+              return 1
+            else
+              local command_status=$?
+              case "$command_output" in
+                *ResourceNotFoundException*|*ParameterNotFound*)
+                  echo "${resource_label} ausente após destroy."
+                  return 0
+                  ;;
+                *)
+                  echo "::error::Não foi possível confirmar remoção de ${resource_label}. O erro não confirma ausência."
+                  echo "$command_output"
+                  return "$command_status"
+                  ;;
+              esac
+            fi
+          }
+
+          if [ -z "$FUNCTION_NAME_BEFORE_DESTROY" ]; then
+            echo "::warning::Nome da Auth Lambda ausente antes do destroy; não há identificador para validar a função."
+          else
+            assert_resource_absent "Auth Lambda $FUNCTION_NAME_BEFORE_DESTROY" aws lambda get-function-configuration --function-name "$FUNCTION_NAME_BEFORE_DESTROY" --query 'FunctionName' --output text
+          fi
+
+          for parameter_name in \
+            "$SSM_AUTH_LAMBDA_PREFIX/function_arn" \
+            "$SSM_AUTH_LAMBDA_PREFIX/function_name" \
+            "$SSM_AUTH_LAMBDA_PREFIX/security_group_id" \
+            "$SSM_AUTH_LAMBDA_STATUS_PARAMETER"; do
+            assert_resource_absent "SSM parameter $parameter_name" aws ssm get-parameter --name "$parameter_name" --query 'Parameter.Value' --output text
+          done
+
+          echo "Auth Lambda e parâmetros SSM publicados foram removidos."
+
+      - name: "🧹 13 · Remover variáveis sensíveis temporárias"
+        if: always()
+        run: rm -f "$TF_WORKING_DIRECTORY/zz_ci.auto.tfvars.json"

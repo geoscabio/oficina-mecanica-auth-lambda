@@ -19,6 +19,7 @@ concurrency:
 env:
   DOTNET_VERSION: "10.0.x"
   SOLUTION_PATH: "OficinaMecanica.AuthLambda.slnx"
+  FUNCTION_PROJECT_PATH: "src/OficinaMecanica.AuthLambda.Function/OficinaMecanica.AuthLambda.Function.csproj"
   COVERAGE_THRESHOLD: "90"
 
 jobs:
@@ -314,6 +315,80 @@ jobs:
             throw "Vulnerable packages were found."
           }
 
+  package_lambda:
+    name: "📦 06 · Empacotar Lambda"
+    needs: detect_ci_scope
+    if: needs.detect_ci_scope.outputs.ci_required == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: "📥 01 · Baixar código do repositório"
+        uses: actions/checkout@v7
+
+      - name: "🛠️ 02 · Instalar SDK do .NET"
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: "📦 03 · Restaurar cache de pacotes NuGet"
+        uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.sln', '**/*.slnx', '**/*.csproj', '**/*.props', '**/*.targets') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: "📚 04 · Resolver dependências da solução"
+        run: dotnet restore ${{ env.SOLUTION_PATH }}
+
+      - name: "📤 05 · Publicar projeto da Function"
+        run: >
+          dotnet publish ${{ env.FUNCTION_PROJECT_PATH }}
+          --configuration Release
+          --runtime linux-x64
+          --self-contained false
+          --output ./artifacts/auth-lambda/publish
+
+      - name: "🗜️ 06 · Compactar pacote da Lambda"
+        shell: pwsh
+        run: |
+          $publishPath = "./artifacts/auth-lambda/publish"
+          $zipPath = "./artifacts/auth-lambda/oficina-mecanica-auth-lambda.zip"
+
+          if (-not (Test-Path -LiteralPath $publishPath)) {
+            throw "Publish directory was not generated."
+          }
+
+          Compress-Archive `
+            -Path (Join-Path $publishPath "*") `
+            -DestinationPath $zipPath `
+            -Force
+
+      - name: "✅ 07 · Validar pacote gerado"
+        shell: pwsh
+        run: |
+          $zipPath = "./artifacts/auth-lambda/oficina-mecanica-auth-lambda.zip"
+
+          if (-not (Test-Path -LiteralPath $zipPath)) {
+            throw "Lambda package was not generated."
+          }
+
+          $zipFile = Get-Item -LiteralPath $zipPath
+
+          if ($zipFile.Length -le 0) {
+            throw "Lambda package is empty."
+          }
+
+          Write-Host "Lambda package: $($zipFile.FullName)"
+          Write-Host "Lambda package size: $($zipFile.Length) bytes"
+
+      - name: "⬆️ 08 · Publicar pacote da Lambda"
+        uses: actions/upload-artifact@v7
+        with:
+          name: auth-lambda-package
+          path: ./artifacts/auth-lambda/oficina-mecanica-auth-lambda.zip
+          if-no-files-found: error
+
   quality_gate:
     name: "🚦 07 · Quality gate"
     runs-on: ubuntu-latest
@@ -324,6 +399,7 @@ jobs:
       - verify_code_style
       - test_solution
       - verify_vulnerable_packages
+      - package_lambda
     if: always()
 
     steps:
@@ -349,6 +425,7 @@ jobs:
             "${{ needs.verify_code_style.result }}"
             "${{ needs.test_solution.result }}"
             "${{ needs.verify_vulnerable_packages.result }}"
+            "${{ needs.package_lambda.result }}"
           )
 
           for result in "${results[@]}"; do

@@ -40,6 +40,11 @@ variable "lambda_timeout_seconds" {
   default     = 30
 }
 
+variable "lambda_execution_role_name" {
+  description = "Nome da IAM Role existente usada pela Lambda. A role deve permitir execução Lambda, CloudWatch Logs e VPC ENI."
+  type        = string
+}
+
 variable "connection_string" {
   description = "Connection string SQL Server usada pela Auth Lambda. Valor real deve vir de secret no CD futuro."
   type        = string

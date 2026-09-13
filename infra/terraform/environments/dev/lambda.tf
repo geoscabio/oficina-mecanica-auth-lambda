@@ -1,13 +1,14 @@
 resource "aws_lambda_function" "auth" {
   function_name    = var.function_name
   description      = "Auth Lambda da Oficina Mecanica para autenticacao de Cliente por documento"
-  role             = aws_iam_role.lambda.arn
+  role             = data.aws_iam_role.lambda_execution.arn
   handler          = local.lambda_handler
   runtime          = "dotnet10"
   filename         = var.lambda_package_file_path
   source_code_hash = var.lambda_package_source_code_hash
   memory_size      = var.lambda_memory_size
   timeout          = var.lambda_timeout_seconds
+  tags             = local.common_tags
 
   environment {
     variables = {
@@ -26,8 +27,6 @@ resource "aws_lambda_function" "auth" {
 
   depends_on = [
     aws_cloudwatch_log_group.lambda,
-    aws_iam_role_policy_attachment.lambda_basic_execution,
-    aws_iam_role_policy_attachment.lambda_vpc_access_execution,
     aws_vpc_security_group_egress_rule.lambda_sql_server_to_rds,
     terraform_data.vpc_ready,
     terraform_data.rds_ready,

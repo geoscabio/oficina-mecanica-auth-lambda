@@ -107,7 +107,6 @@ jobs:
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
       TERRAFORM_ACTION: ${{ needs.resolve_action.outputs.terraform_action }}
-      AUTH_LAMBDA_CONNECTION_STRING: ${{ secrets.AUTH_LAMBDA_CONNECTION_STRING }}
       AUTH_LAMBDA_JWT_SECRET: ${{ secrets.AUTH_LAMBDA_JWT_SECRET }}
       AUTH_LAMBDA_EXECUTION_ROLE_NAME: ${{ vars.AUTH_LAMBDA_EXECUTION_ROLE_NAME }}
       AUTH_LAMBDA_JWT_ISSUER: ${{ vars.AUTH_LAMBDA_JWT_ISSUER || 'oficina-mecanica-auth' }}
@@ -148,7 +147,7 @@ jobs:
 
           missing=""
 
-          for name in AUTH_LAMBDA_CONNECTION_STRING AUTH_LAMBDA_JWT_SECRET AUTH_LAMBDA_EXECUTION_ROLE_NAME; do
+          for name in AUTH_LAMBDA_JWT_SECRET AUTH_LAMBDA_EXECUTION_ROLE_NAME; do
             if [ -z "${!name}" ]; then
               missing="$missing $name"
             fi
@@ -211,7 +210,9 @@ jobs:
           for parameter_name in \
             "$SSM_VPC_PREFIX/vpc_id" \
             "$SSM_VPC_PREFIX/private_subnet_ids" \
-            "$SSM_RDS_PREFIX/security_group_id"; do
+            "$SSM_RDS_PREFIX/security_group_id" \
+            "$SSM_RDS_PREFIX/endpoint" \
+            "$SSM_RDS_PREFIX/master_secret_arn"; do
             parameter_value="$(aws ssm get-parameter --name "$parameter_name" --query 'Parameter.Value' --output text)"
 
             if [ -z "$parameter_value" ] || [ "$parameter_value" = "None" ]; then
@@ -284,31 +285,53 @@ jobs:
           set -euo pipefail
           umask 077
 
-          if [ "$TERRAFORM_ACTION" = "destroy" ]; then
-            connection_string="Server=destroy-only;Database=destroy-only;User Id=destroy-only;Password=DestroyOnly-2026!;TrustServerCertificate=True"
-            jwt_secret="destroy-only-placeholder-secret-with-at-least-32-bytes"
-            lambda_execution_role_name="${AUTH_LAMBDA_EXECUTION_ROLE_NAME:-DestroyOnlyRole}"
-          else
-            connection_string="$AUTH_LAMBDA_CONNECTION_STRING"
-            jwt_secret="$AUTH_LAMBDA_JWT_SECRET"
-            lambda_execution_role_name="$AUTH_LAMBDA_EXECUTION_ROLE_NAME"
-          fi
-
-          CONNECTION_STRING="$connection_string" \
-          JWT_SECRET="$jwt_secret" \
-          LAMBDA_EXECUTION_ROLE_NAME="$lambda_execution_role_name" \
           python - <<'PY'
           import json
           import os
           from pathlib import Path
+          import subprocess
+
+          def aws_output(*args):
+              result = subprocess.run(
+                  ["aws", *args],
+                  check=True,
+                  capture_output=True,
+                  text=True,
+              )
+              return result.stdout.strip()
+
+          if os.environ["TERRAFORM_ACTION"] == "destroy":
+              connection_string = "Server=destroy-only;Database=destroy-only;User Id=destroy-only;Password=DestroyOnly-2026!;TrustServerCertificate=True"
+              jwt_secret = "destroy-only-placeholder-secret-with-at-least-32-bytes"
+              lambda_execution_role_name = os.environ.get("AUTH_LAMBDA_EXECUTION_ROLE_NAME", "DestroyOnlyRole")
+          else:
+              endpoint = aws_output("ssm", "get-parameter", "--name", f"{os.environ['SSM_RDS_PREFIX']}/endpoint", "--query", "Parameter.Value", "--output", "text")
+              secret_arn = aws_output("ssm", "get-parameter", "--name", f"{os.environ['SSM_RDS_PREFIX']}/master_secret_arn", "--query", "Parameter.Value", "--output", "text")
+              if not endpoint or not secret_arn:
+                  raise ValueError("RDS endpoint ou ARN do segredo não foi publicado.")
+              secret_string = aws_output("secretsmanager", "get-secret-value", "--secret-id", secret_arn, "--query", "SecretString", "--output", "text")
+              try:
+                  secret = json.loads(secret_string)
+              except json.JSONDecodeError as error:
+                  raise ValueError("SecretString do RDS não contém JSON válido.") from error
+              username = secret.get("username")
+              password = secret.get("password")
+              if not username or not password:
+                  raise ValueError("SecretString do RDS não contém username e password.")
+              connection_string = f"Server=tcp:{endpoint},1433;Database=OficinaMecanicaDb;User Id={username};Password={password};TrustServerCertificate=True;"
+              print(f"::add-mask::{username}")
+              print(f"::add-mask::{password}")
+              print(f"::add-mask::{connection_string}")
+              jwt_secret = os.environ["AUTH_LAMBDA_JWT_SECRET"]
+              lambda_execution_role_name = os.environ["AUTH_LAMBDA_EXECUTION_ROLE_NAME"]
 
           values = {
               "aws_region": os.environ["AWS_REGION"],
-              "lambda_execution_role_name": os.environ["LAMBDA_EXECUTION_ROLE_NAME"],
+              "lambda_execution_role_name": lambda_execution_role_name,
               "lambda_package_file_path": "../../../../artifacts/auth-lambda/oficina-mecanica-auth-lambda.zip",
               "lambda_package_source_code_hash": os.environ["LAMBDA_PACKAGE_SOURCE_CODE_HASH"],
-              "connection_string": os.environ["CONNECTION_STRING"],
-              "jwt_secret": os.environ["JWT_SECRET"],
+              "connection_string": connection_string,
+              "jwt_secret": jwt_secret,
               "jwt_issuer": os.environ["AUTH_LAMBDA_JWT_ISSUER"],
               "jwt_audience": os.environ["AUTH_LAMBDA_JWT_AUDIENCE"],
               "jwt_expiration_minutes": int(os.environ["AUTH_LAMBDA_JWT_EXPIRATION_MINUTES"]),
@@ -401,7 +424,6 @@ jobs:
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
       TERRAFORM_ACTION: ${{ needs.resolve_action.outputs.terraform_action }}
-      AUTH_LAMBDA_CONNECTION_STRING: ${{ secrets.AUTH_LAMBDA_CONNECTION_STRING }}
       AUTH_LAMBDA_JWT_SECRET: ${{ secrets.AUTH_LAMBDA_JWT_SECRET }}
       AUTH_LAMBDA_EXECUTION_ROLE_NAME: ${{ vars.AUTH_LAMBDA_EXECUTION_ROLE_NAME }}
       AUTH_LAMBDA_JWT_ISSUER: ${{ vars.AUTH_LAMBDA_JWT_ISSUER || 'oficina-mecanica-auth' }}
@@ -468,39 +490,58 @@ jobs:
 
       - name: "📝 08 · Reescrever variáveis do Terraform"
         env:
-          CONNECTION_STRING: ${{ secrets.AUTH_LAMBDA_CONNECTION_STRING }}
-          JWT_SECRET: ${{ secrets.AUTH_LAMBDA_JWT_SECRET }}
-          LAMBDA_EXECUTION_ROLE_NAME: ${{ vars.AUTH_LAMBDA_EXECUTION_ROLE_NAME }}
           LAMBDA_PACKAGE_SOURCE_CODE_HASH: ${{ steps.package.outputs.package_hash }}
         run: |
           set -euo pipefail
           umask 077
 
-          if [ "$TERRAFORM_ACTION" = "destroy" ]; then
-            connection_string="Server=destroy-only;Database=destroy-only;User Id=destroy-only;Password=DestroyOnly-2026!;TrustServerCertificate=True"
-            jwt_secret="destroy-only-placeholder-secret-with-at-least-32-bytes"
-            lambda_execution_role_name="${LAMBDA_EXECUTION_ROLE_NAME:-DestroyOnlyRole}"
-          else
-            connection_string="$CONNECTION_STRING"
-            jwt_secret="$JWT_SECRET"
-            lambda_execution_role_name="$LAMBDA_EXECUTION_ROLE_NAME"
-          fi
-
-          CONNECTION_STRING="$connection_string" \
-          JWT_SECRET="$jwt_secret" \
-          LAMBDA_EXECUTION_ROLE_NAME="$lambda_execution_role_name" \
           python - <<'PY'
           import json
           import os
           from pathlib import Path
+          import subprocess
+
+          def aws_output(*args):
+              result = subprocess.run(
+                  ["aws", *args],
+                  check=True,
+                  capture_output=True,
+                  text=True,
+              )
+              return result.stdout.strip()
+
+          if os.environ["TERRAFORM_ACTION"] == "destroy":
+              connection_string = "Server=destroy-only;Database=destroy-only;User Id=destroy-only;Password=DestroyOnly-2026!;TrustServerCertificate=True"
+              jwt_secret = "destroy-only-placeholder-secret-with-at-least-32-bytes"
+              lambda_execution_role_name = os.environ.get("AUTH_LAMBDA_EXECUTION_ROLE_NAME", "DestroyOnlyRole")
+          else:
+              endpoint = aws_output("ssm", "get-parameter", "--name", f"{os.environ['SSM_RDS_PREFIX']}/endpoint", "--query", "Parameter.Value", "--output", "text")
+              secret_arn = aws_output("ssm", "get-parameter", "--name", f"{os.environ['SSM_RDS_PREFIX']}/master_secret_arn", "--query", "Parameter.Value", "--output", "text")
+              if not endpoint or not secret_arn:
+                  raise ValueError("RDS endpoint ou ARN do segredo não foi publicado.")
+              secret_string = aws_output("secretsmanager", "get-secret-value", "--secret-id", secret_arn, "--query", "SecretString", "--output", "text")
+              try:
+                  secret = json.loads(secret_string)
+              except json.JSONDecodeError as error:
+                  raise ValueError("SecretString do RDS não contém JSON válido.") from error
+              username = secret.get("username")
+              password = secret.get("password")
+              if not username or not password:
+                  raise ValueError("SecretString do RDS não contém username e password.")
+              connection_string = f"Server=tcp:{endpoint},1433;Database=OficinaMecanicaDb;User Id={username};Password={password};TrustServerCertificate=True;"
+              print(f"::add-mask::{username}")
+              print(f"::add-mask::{password}")
+              print(f"::add-mask::{connection_string}")
+              jwt_secret = os.environ["AUTH_LAMBDA_JWT_SECRET"]
+              lambda_execution_role_name = os.environ["AUTH_LAMBDA_EXECUTION_ROLE_NAME"]
 
           values = {
               "aws_region": os.environ["AWS_REGION"],
-              "lambda_execution_role_name": os.environ["LAMBDA_EXECUTION_ROLE_NAME"],
+              "lambda_execution_role_name": lambda_execution_role_name,
               "lambda_package_file_path": "../../../../artifacts/auth-lambda/oficina-mecanica-auth-lambda.zip",
               "lambda_package_source_code_hash": os.environ["LAMBDA_PACKAGE_SOURCE_CODE_HASH"],
-              "connection_string": os.environ["CONNECTION_STRING"],
-              "jwt_secret": os.environ["JWT_SECRET"],
+              "connection_string": connection_string,
+              "jwt_secret": jwt_secret,
               "jwt_issuer": os.environ["AUTH_LAMBDA_JWT_ISSUER"],
               "jwt_audience": os.environ["AUTH_LAMBDA_JWT_AUDIENCE"],
               "jwt_expiration_minutes": int(os.environ["AUTH_LAMBDA_JWT_EXPIRATION_MINUTES"]),

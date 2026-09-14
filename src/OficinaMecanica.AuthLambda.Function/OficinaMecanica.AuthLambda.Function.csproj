@@ -9,6 +9,8 @@
   <ItemGroup><ProjectReference Include="..\OficinaMecanica.AuthLambda.Application\OficinaMecanica.AuthLambda.Application.csproj" /><ProjectReference Include="..\OficinaMecanica.AuthLambda.Infrastructure\OficinaMecanica.AuthLambda.Infrastructure.csproj" /></ItemGroup>
   <ItemGroup>
     <PackageReference Include="Amazon.Lambda.APIGatewayEvents" Version="2.7.1" />
+    <PackageReference Include="Amazon.Lambda.Core" Version="3.3.0" />
+    <PackageReference Include="Amazon.Lambda.Serialization.SystemTextJson" Version="3.0.1" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.7" />
   </ItemGroup>
 </Project>

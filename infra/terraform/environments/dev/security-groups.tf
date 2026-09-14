@@ -15,3 +15,14 @@ resource "aws_vpc_security_group_egress_rule" "lambda_sql_server_to_rds" {
 
   depends_on = [terraform_data.rds_ready]
 }
+
+resource "aws_vpc_security_group_ingress_rule" "rds_sql_server_from_lambda" {
+  description                  = "SQL Server do security group da Auth Lambda para o RDS"
+  security_group_id            = data.aws_ssm_parameter.rds_security_group_id.value
+  referenced_security_group_id = aws_security_group.lambda.id
+  ip_protocol                  = "tcp"
+  from_port                    = 1433
+  to_port                      = 1433
+
+  depends_on = [terraform_data.rds_ready]
+}

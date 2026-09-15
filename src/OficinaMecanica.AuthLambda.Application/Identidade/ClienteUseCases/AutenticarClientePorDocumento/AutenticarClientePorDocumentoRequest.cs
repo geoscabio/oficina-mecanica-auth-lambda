@@ -1,0 +1,3 @@
+namespace OficinaMecanica.AuthLambda.Application.Identidade.ClienteUseCases.AutenticarClientePorDocumento;
+
+public sealed record AutenticarClientePorDocumentoRequest(string? Documento);

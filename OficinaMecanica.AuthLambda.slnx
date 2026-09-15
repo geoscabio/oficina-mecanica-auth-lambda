@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/OficinaMecanica.AuthLambda.Application/OficinaMecanica.AuthLambda.Application.csproj" />
+    <Project Path="src/OficinaMecanica.AuthLambda.Domain/OficinaMecanica.AuthLambda.Domain.csproj" />
+    <Project Path="src/OficinaMecanica.AuthLambda.Function/OficinaMecanica.AuthLambda.Function.csproj" />
+    <Project Path="src/OficinaMecanica.AuthLambda.Infrastructure/OficinaMecanica.AuthLambda.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/OficinaMecanica.AuthLambda.Application.UnitTests/OficinaMecanica.AuthLambda.Application.UnitTests.csproj" />
+    <Project Path="tests/OficinaMecanica.AuthLambda.Domain.UnitTests/OficinaMecanica.AuthLambda.Domain.UnitTests.csproj" />
+    <Project Path="tests/OficinaMecanica.AuthLambda.Function.UnitTests/OficinaMecanica.AuthLambda.Function.UnitTests.csproj" />
+  </Folder>
+</Solution>

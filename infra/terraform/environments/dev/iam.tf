@@ -2,6 +2,7 @@ data "aws_iam_role" "lambda_execution" {
   name = var.lambda_execution_role_name
 }
 
+# A role é externa; este repo gerencia somente a permissão específica do Datadog.
 resource "aws_iam_role_policy" "datadog_api_key_read" {
   name = "${var.function_name}-datadog-api-key-read"
   role = data.aws_iam_role.lambda_execution.name

@@ -40,6 +40,12 @@ variable "lambda_timeout_seconds" {
   default     = 30
 }
 
+variable "datadog_version" {
+  description = "Versão implantada publicada no unified service tagging do Datadog."
+  type        = string
+  default     = "unknown"
+}
+
 variable "lambda_execution_role_name" {
   description = "Nome da IAM Role existente usada pela Lambda. A role deve permitir execução Lambda, CloudWatch Logs e VPC ENI."
   type        = string

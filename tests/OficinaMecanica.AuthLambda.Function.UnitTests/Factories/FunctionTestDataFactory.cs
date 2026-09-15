@@ -21,11 +21,14 @@ internal static class FunctionTestDataFactory
 
     public static readonly Guid ClienteIdPadrao = Guid.Parse("a80e1974-f2c1-4dd1-8b30-a9878a8a874d");
 
-    public static APIGatewayHttpApiV2ProxyRequest CriarRequestApiGateway(string body)
+    public static APIGatewayHttpApiV2ProxyRequest CriarRequestApiGateway(
+        string body,
+        IDictionary<string, string>? headers = null)
     {
         return new APIGatewayHttpApiV2ProxyRequest
         {
-            Body = body
+            Body = body,
+            Headers = headers
         };
     }
 

@@ -1,10 +1,31 @@
-# Oficina Mecânica — Auth Lambda
+# 🔐 Oficina Mecânica — Auth Lambda
 
 Autenticação da solução Oficina Mecânica por documento: emite JWT para o cliente
 encontrado no RDS. A visão de entrada da solução está no
 [README da API](https://github.com/geoscabio/oficina-mecanica-api#readme).
 
-## Responsabilidade e fluxo
+---
+
+## 📌 Índice
+
+- [✨ Visão geral](#visao-geral)
+- [🏗️ Responsabilidade e fluxo](#arquitetura)
+- [🧩 Repositórios da solução](#repositorios)
+- [🔐 Configuração, secrets e contratos](#configuracao)
+- [☁️ Execução, CI/CD e deploy](#deploy)
+- [📊 Observabilidade, testes e documentação](#qualidade)
+
+---
+
+<a id="visao-geral"></a>
+
+## ✨ Visão geral
+
+Componente de autenticação por documento e emissão de JWT da solução.
+
+<a id="arquitetura"></a>
+
+## 🏗️ Responsabilidade e fluxo
 
 Este repositório provisiona a Lambda de autenticação e sua conectividade privada
 com o RDS. A rota `POST /auth/documento` é exposta pelo API Gateway; não existe
@@ -15,7 +36,11 @@ Lambda Function URL pública.
 As respostas contratuais são `200`, `400`, `401` e `503`. O JWT é configurado
 pelos parâmetros de issuer, audience e expiração abaixo.
 
-## Repositórios da solução
+---
+
+<a id="repositorios"></a>
+
+## 🧩 Repositórios da solução
 
 | Repositório | Responsabilidade |
 |---|---|
@@ -26,14 +51,20 @@ pelos parâmetros de issuer, audience e expiração abaixo.
 | [RDS](https://github.com/geoscabio/oficina-mecanica-infra-rds) | Banco SQL Server privado e segredo mestre. |
 | [API Gateway](https://github.com/geoscabio/oficina-mecanica-infra-api-gateway) | Entrada HTTP, VPC Link e integrações. |
 
-## Tecnologias e pré-requisitos
+---
+
+## 🧰 Tecnologias e pré-requisitos
 
 - .NET 10, AWS Lambda, Terraform e GitHub Actions.
 - AWS CLI e Terraform instalados para execução local.
 - Infraestrutura VPC e RDS aplicada e com contratos SSM disponíveis.
 - Credenciais AWS com acesso aos recursos previstos pelo Terraform.
 
-## Configuração, secrets e contratos
+---
+
+<a id="configuracao"></a>
+
+## 🔐 Configuração, secrets e contratos
 
 | Nome | Tipo e escopo | Obrigatório | Finalidade |
 |---|---|---:|---|
@@ -59,7 +90,11 @@ No `develop` atual não há `DD_API_KEY` nem configuração Datadog neste workfl
 Uma integração futura deve ser documentada apenas quando estiver presente no
 branch implantado.
 
-## Execução, CI/CD e deploy
+---
+
+<a id="deploy"></a>
+
+## ☁️ Execução, CI/CD e deploy
 
 O workflow `aws-deploy.yml` resolve a ação, executa `plan` e aplica ou destrói
 conforme o fluxo já existente. Localmente, execute no diretório Terraform:
@@ -73,7 +108,11 @@ terraform plan
 O deploy exige os contratos VPC/RDS acima. A promoção continua governada pelos
 workflows do repositório; este README não substitui os controles de ambiente.
 
-## Observabilidade, testes e documentação
+---
+
+<a id="qualidade"></a>
+
+## 📊 Observabilidade, testes e documentação
 
 A Lambda usa os logs nativos do CloudWatch. Não há integração Datadog declarada
 neste branch. Execute `dotnet build` e `dotnet test` para validar o código, além

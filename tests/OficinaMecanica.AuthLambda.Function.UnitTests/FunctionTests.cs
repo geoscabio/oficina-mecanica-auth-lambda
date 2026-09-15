@@ -12,6 +12,37 @@ namespace OficinaMecanica.AuthLambda.Function.UnitTests;
 
 public sealed class FunctionTests
 {
+    [Fact]
+    public async Task Dado_CorrelationIdRecebido_Quando_ExecutarHandler_Entao_DevePreservarNaResposta()
+    {
+        // Arrange
+        const string correlationId = "correlation-id-externo";
+        var function = CriarFunction();
+        var request = FunctionTestDataFactory.CriarRequestApiGateway(
+            FunctionTestDataFactory.BodyVazio,
+            new Dictionary<string, string> { ["x-correlation-id"] = correlationId });
+
+        // Act
+        var response = await function.Handler(request);
+
+        // Assert
+        response.Headers["X-Correlation-Id"].Should().Be(correlationId);
+    }
+
+    [Fact]
+    public async Task Dado_CorrelationIdAusente_Quando_ExecutarHandler_Entao_DeveGerarNaResposta()
+    {
+        // Arrange
+        var function = CriarFunction();
+        var request = FunctionTestDataFactory.CriarRequestApiGateway(FunctionTestDataFactory.BodyVazio);
+
+        // Act
+        var response = await function.Handler(request);
+
+        // Assert
+        response.Headers["X-Correlation-Id"].Should().HaveLength(32);
+    }
+
     [Theory]
     [InlineData(FunctionTestDataFactory.BodyVazio)]
     [InlineData(FunctionTestDataFactory.JsonInvalido)]

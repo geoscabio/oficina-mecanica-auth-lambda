@@ -8,7 +8,11 @@ resource "aws_lambda_function" "auth" {
   source_code_hash = var.lambda_package_source_code_hash
   memory_size      = var.lambda_memory_size
   timeout          = var.lambda_timeout_seconds
-  tags             = local.common_tags
+  layers = [
+    local.datadog_dotnet_layer_arn,
+    local.datadog_extension_layer_arn,
+  ]
+  tags = local.common_tags
 
   environment {
     variables = {
@@ -17,6 +21,14 @@ resource "aws_lambda_function" "auth" {
       "Jwt__Audience"                = var.jwt_audience
       "Jwt__Secret"                  = var.jwt_secret
       "Jwt__ExpirationMinutes"       = tostring(var.jwt_expiration_minutes)
+      "AWS_LAMBDA_EXEC_WRAPPER"      = "/opt/datadog_wrapper"
+      "DD_API_KEY_SECRET_ARN"        = aws_secretsmanager_secret.datadog_api_key.arn
+      "DD_ENV"                       = var.environment
+      "DD_LOGS_INJECTION"            = "true"
+      "DD_SERVICE"                   = "oficina-mecanica-auth-lambda"
+      "DD_SITE"                      = "datadoghq.com"
+      "DD_TRACE_ENABLED"             = "true"
+      "DD_VERSION"                   = var.datadog_version
     }
   }
 
@@ -27,6 +39,7 @@ resource "aws_lambda_function" "auth" {
 
   depends_on = [
     aws_cloudwatch_log_group.lambda,
+    aws_iam_role_policy.datadog_api_key_read,
     aws_vpc_security_group_egress_rule.lambda_sql_server_to_rds,
     terraform_data.vpc_ready,
     terraform_data.rds_ready,

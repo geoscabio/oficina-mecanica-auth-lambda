@@ -13,6 +13,11 @@ output "auth_lambda_security_group_id" {
   value       = aws_security_group.lambda.id
 }
 
+output "datadog_api_key_secret_arn" {
+  description = "ARN do secret container cuja versão é populada pelo workflow com a API key do Datadog."
+  value       = aws_secretsmanager_secret.datadog_api_key.arn
+}
+
 output "ssm_auth_lambda_prefix" {
   description = "Prefixo dos parâmetros SSM publicados pela Auth Lambda."
   value       = var.auth_lambda_ssm_prefix

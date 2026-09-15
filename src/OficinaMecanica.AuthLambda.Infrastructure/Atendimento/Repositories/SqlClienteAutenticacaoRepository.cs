@@ -1,5 +1,6 @@
 using System.Data;
 using Microsoft.Data.SqlClient;
+using OficinaMecanica.AuthLambda.Application.Common;
 using OficinaMecanica.AuthLambda.Application.Identidade.Repositories;
 using OficinaMecanica.AuthLambda.Domain.Atendimento.Enums;
 using OficinaMecanica.AuthLambda.Domain.Atendimento.ValueObjects;
@@ -24,21 +25,30 @@ public sealed class SqlClienteAutenticacaoRepository : IClienteAutenticacaoRepos
 
     public async Task<ClienteAutenticacao?> ObterAsync(CpfCnpj documento, CancellationToken cancellationToken)
     {
-        await using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync(cancellationToken);
-
-        await using var command = new SqlCommand(Query, connection);
-        command.Parameters.Add("@documento", SqlDbType.NVarChar, 14).Value = documento.Numero;
-        command.Parameters.Add("@tipoDocumento", SqlDbType.Int).Value = (int)documento.Tipo;
-
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
-        if (!await reader.ReadAsync(cancellationToken))
+        try
         {
-            return null;
-        }
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync(cancellationToken);
 
-        return new ClienteAutenticacao(
-            reader.GetGuid(0),
-            (StatusCliente)reader.GetInt32(1));
+            await using var command = new SqlCommand(Query, connection);
+            command.Parameters.Add("@documento", SqlDbType.NVarChar, 14).Value = documento.Numero;
+            command.Parameters.Add("@tipoDocumento", SqlDbType.Int).Value = (int)documento.Tipo;
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return null;
+            }
+
+            return new ClienteAutenticacao(
+                reader.GetGuid(0),
+                (StatusCliente)reader.GetInt32(1));
+        }
+        catch (Exception exception) when (exception is SqlException or TimeoutException)
+        {
+            throw new DependenciaIndisponivelException(
+                "A dependência de persistência está indisponível.",
+                exception);
+        }
     }
 }

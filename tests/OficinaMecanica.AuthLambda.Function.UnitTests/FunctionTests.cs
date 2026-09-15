@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FluentAssertions;
 using Moq;
+using OficinaMecanica.AuthLambda.Application.Common;
 using OficinaMecanica.AuthLambda.Application.Identidade.ClienteUseCases.AutenticarClientePorDocumento;
 using OficinaMecanica.AuthLambda.Application.Identidade.Interfaces;
 using OficinaMecanica.AuthLambda.Application.Identidade.Repositories;
@@ -91,6 +92,42 @@ public sealed class FunctionTests
         response.Body.Should().Contain("ErroInterno");
         response.Body.Should().NotContain("segredo interno");
         response.Body.Should().NotContain(FunctionTestDataFactory.DocumentoCpfValido);
+    }
+
+    [Fact]
+    public async Task Dado_DependenciaIndisponivel_Quando_ExecutarHandler_Entao_DeveRetornarServiceUnavailableSanitizado()
+    {
+        // Arrange
+        const string detalheInterno = "SQL endpoint connection string segredo interno";
+        var repositorio = new Mock<IClienteAutenticacaoRepository>();
+
+        repositorio
+            .Setup(repo => repo.ObterAsync(It.IsAny<CpfCnpj>(), It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new DependenciaIndisponivelException(
+                "Falha interna da dependência.",
+                new TimeoutException(detalheInterno)));
+
+        var function = CriarFunction(repositorio, new Mock<ITokenService>());
+        var request = FunctionTestDataFactory.CriarRequestApiGateway(FunctionTestDataFactory.BodyComDocumentoValido);
+
+        // Act
+        var response = await function.Handler(request);
+
+        // Assert
+        using var json = JsonDocument.Parse(response.Body);
+
+        response.StatusCode.Should().Be(503);
+        response.Headers["Content-Type"].Should().Be("application/json");
+        json.RootElement.GetProperty("mensagem").GetString().Should().Be("Serviço temporariamente indisponível.");
+        json.RootElement.GetProperty("tipo").GetString().Should().Be("ErroInterno");
+        response.Body.Should().NotContain("Falha interna da dependência.");
+        response.Body.Should().NotContain(detalheInterno);
+        response.Body.Should().NotContain(FunctionTestDataFactory.DocumentoCpfValido);
+        response.Body.Should().NotContain("documento");
+        response.Body.Should().NotContain("connection string");
+        response.Body.Should().NotContain("SQL");
+        response.Body.Should().NotContain("endpoint");
+        response.Body.Should().NotContain("segredo");
     }
 
     private static Function CriarFunction(ClienteAutenticacao? cliente = null)

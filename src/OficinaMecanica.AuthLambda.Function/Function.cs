@@ -43,6 +43,10 @@ public sealed class Function
         {
             return Json(400, CriarErroRequisicaoInvalida());
         }
+        catch (DependenciaIndisponivelException)
+        {
+            return Json(503, new ErrorResponse("Serviço temporariamente indisponível.", TipoErro.ErroInterno));
+        }
         catch
         {
             return Json(500, new ErrorResponse("Erro interno inesperado.", TipoErro.ErroInterno));

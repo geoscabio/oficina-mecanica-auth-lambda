@@ -36,7 +36,7 @@ A Auth Lambda complementa o ecossistema da Oficina Mecânica com um fluxo de aut
 | 🔐 Autenticação | Autentica clientes por CPF/CNPJ. |
 | 🧾 Consulta | Lê dados mínimos do cliente na base de Atendimento. |
 | 🎫 Token | Emite JWT com `sub`, `role`, `jti` e `cliente_id`. |
-| 🧱 Integração | Prepara o fluxo para exposição futura via API Gateway. |
+| 🧱 Integração | Atende o `POST /auth/documento` exposto pelo API Gateway. |
 
 ---
 
@@ -48,14 +48,14 @@ O objetivo deste serviço é autenticar clientes por documento, sem duplicar reg
 
 Este repo cuida de:
 
-- receber uma requisição HTTP futuramente roteada pelo API Gateway;
+- receber uma requisição HTTP roteada pelo API Gateway;
 - autenticar o cliente por CPF/CNPJ;
 - consultar o cliente na base de Atendimento;
 - validar se o cliente está ativo;
 - emitir JWT HMAC-SHA256 para consumo pela `oficina-mecanica-api`;
 - retornar respostas HTTP padronizadas.
 
-Infraestrutura, deploy, API Gateway, VPC, secrets de ambiente e automações de CI/CD serão tratados em etapas posteriores.
+O repositório também mantém a infraestrutura e o deploy da Lambda. VPC, RDS e API Gateway permanecem em esteiras próprias e são consumidos por contratos SSM.
 
 ---
 
@@ -144,10 +144,10 @@ Clientes inexistentes e clientes inativos retornam a mesma resposta, evitando di
 
 ## 📡 Contrato HTTP esperado
 
-O endpoint definitivo depende da etapa futura de API Gateway/infraestrutura. O contrato planejado para exposição é:
+O contrato exposto pelo API Gateway é:
 
 ```http
-POST /auth/cliente
+POST /auth/documento
 ```
 
 ### Request
@@ -190,12 +190,12 @@ Com a configuração default atual de 60 minutos, `expiresIn` será `3600`.
 }
 ```
 
-### Response 500
+### Response 503
 
 ```json
 {
-  "mensagem": "Erro interno inesperado.",
-  "tipo": "ErroInterno"
+  "mensagem": "Serviço temporariamente indisponível.",
+  "tipo": "DependenciaIndisponivel"
 }
 ```
 
@@ -212,12 +212,41 @@ Com a configuração default atual de 60 minutos, `expiresIn` será `3600`.
 | `Jwt__Audience` | Sim | Audience do JWT. Valor esperado: `oficina-mecanica-api`. |
 | `Jwt__Secret` | Sim | Chave HMAC-SHA256 usada para assinar o token. |
 | `Jwt__ExpirationMinutes` | Não | Expiração em minutos. Usa `60` como default se ausente ou inválido. |
+| `AWS_LAMBDA_EXEC_WRAPPER` | Sim no deploy AWS | Ativa o wrapper da layer Datadog. |
+| `DD_API_KEY_SECRET_ARN` | Sim no deploy AWS | ARN do secret criado para a API key Datadog. |
+| `DD_SITE` | Sim no deploy AWS | Site Datadog; a configuração atual usa `datadoghq.com`. |
+| `DD_SERVICE`, `DD_ENV`, `DD_VERSION` | Sim no deploy AWS | Identificação e correlação da telemetria. |
 
 Observações:
 
 - `Jwt__Secret` deve ter pelo menos 32 bytes.
 - Secrets reais não devem ser versionados.
 - Credenciais de banco, tokens e chaves devem ser configurados em ambiente seguro na etapa de deploy.
+
+### GitHub Environment `development`
+
+Crie os itens abaixo em **Settings > Environments > development**:
+
+| Nome | Tipo | Valor esperado em termos conceituais |
+| --- | --- | --- |
+| `AWS_ACCESS_KEY_ID` | Environment Secret | Access key temporária do AWS Academy. |
+| `AWS_SECRET_ACCESS_KEY` | Environment Secret | Secret key temporária do AWS Academy. |
+| `AWS_SESSION_TOKEN` | Environment Secret | Token temporário da sessão AWS Academy. |
+| `AUTH_LAMBDA_JWT_SECRET` | Environment Secret | Chave HMAC forte, compatível com a validação da API. |
+| `DD_API_KEY` | Environment Secret | API key do Datadog; o workflow grava o valor no AWS Secrets Manager. |
+| `AWS_REGION` | Environment Variable | Região AWS, com fallback `us-east-1`. |
+| `AUTH_LAMBDA_EXECUTION_ROLE_NAME` | Environment Variable | Nome da role externa do laboratório, normalmente `LabRole`. |
+| `DD_SITE` | Environment Variable | Site Datadog aplicável; a configuração atual efetiva usa `datadoghq.com`. |
+| `AUTO_PR_ENABLED` | Repository Variable | `true` somente quando as promoções automáticas estiverem habilitadas. |
+| `RELEASE_BRANCH` | Repository Variable | Branch de promoção, com fallback `release`. |
+
+O ambiente VocLabs fornece a `LabRole`; este repositório apenas consulta e associa essa role à função. Ele não cria nem gerencia policies IAM da role externa.
+
+### Deploy, destroy e validação
+
+O merge em `develop` chama o workflow AWS quando há mudança deployável. `infra/terraform/environments/dev/terraform-action.env` controla `apply` ou `destroy`; destroy deve ocorrer em PR dedicado. Após `apply`, a esteira valida configuração, VPC, layers, secret Datadog e contratos SSM. Após `destroy`, confirma a remoção da função e dos contratos próprios.
+
+A Lambda consome os parâmetros da VPC e do RDS e publica `/oficina-mecanica/development/auth-lambda/function_arn`, `function_name` e `/oficina-mecanica/development/status/auth-lambda`.
 
 ---
 
@@ -236,7 +265,7 @@ Decisões já implementadas:
 - Secret JWT inválido falha em modo fail-fast.
 - Checagem local de pacotes vulneráveis faz parte da validação do repositório.
 
-Itens como WAF, rate limit, Secrets Manager, API Gateway authorizer e configuração de rede serão avaliados nas etapas futuras de infraestrutura e deploy.
+O deploy usa as layers versionadas `dd-trace-dotnet` e `Datadog-Extension`. A instrumentação está configurada, mas a ingestão de logs e traces da Lambda no Datadog não foi evidenciada de ponta a ponta no ambiente acadêmico e permanece como evolução pós-entrega.
 
 ---
 
@@ -295,7 +324,7 @@ Rulesets ativos:
 - **Aprovação de PR:** exige revisão humana, descarta aprovações antigas e exige aprovação do último push.
 - **Proteção Git Flow:** exige PR, resolução de conversas e bloqueia push direto, force push e deleção.
 
-Neste momento, os rulesets ainda não exigem status checks porque o repositório não possui CI/CD configurado. Essa exigência será adicionada depois que os workflows existirem e os nomes reais dos checks forem confirmados.
+Os workflows de CI/CD validam código, testes, Terraform e o fluxo de branches antes das promoções.
 
 ---
 
@@ -308,25 +337,21 @@ Neste momento, os rulesets ainda não exigem status checks porque o repositório
 | Código da Auth Lambda | ✅ Implementado |
 | Testes unitários | ✅ Implementados |
 | Rulesets Git Flow | ✅ Configurados |
-| CI/CD | ⏳ Pendente |
-| Infraestrutura Lambda | ⏳ Pendente |
-| API Gateway | ⏳ Pendente |
-| Deploy AWS | ⏳ Pendente |
-| Integração final com RDS/API Gateway | ⏳ Pendente |
+| CI/CD | ✅ Implementado |
+| Infraestrutura Lambda | ✅ Implementada |
+| API Gateway | ✅ Integrado por contrato |
+| Deploy AWS | ✅ Pipeline implementado |
+| Integração com RDS/API Gateway | ✅ Implementada |
+| Telemetria Datadog da Lambda | ⚠️ Instrumentada; ingestão não evidenciada no ambiente acadêmico |
 
 ---
 
 <a id="proximos-passos"></a>
 
-## 🗺️ Próximos passos
+## 🗺️ Evoluções pós-entrega
 
-- Criar CI/CD seguindo o padrão real dos repositórios maduros.
-- Atualizar o ruleset para exigir os checks corretos.
-- Criar infraestrutura da Lambda.
-- Configurar API Gateway.
-- Configurar variáveis e secrets em ambiente seguro.
-- Validar integração com banco/RDS.
-- Integrar o endpoint final ao fluxo da API Gateway.
+- evidenciar a ingestão completa de logs e traces da Lambda no Datadog;
+- evoluir controles de observabilidade e segurança compatíveis com um ambiente de produção.
 
 ---
 
@@ -334,8 +359,8 @@ Neste momento, os rulesets ainda não exigem status checks porque o repositório
 
 ## 📝 Observações
 
-- Este repositório ainda não possui deploy em produção.
-- Este repositório ainda não possui workflows de CI/CD.
+- Os ambientes `release` e `main` representam promoções lógicas; o ambiente físico AWS da entrega é `development`.
 - Não versionar secrets, connection strings reais, tokens, senhas ou credenciais AWS.
 - A API principal continua dona do schema, das migrations, dos seeds e das regras gerais de domínio.
 - A Auth Lambda não referencia o projeto da API principal.
+- Documentação central e arquitetura completa: [README da Oficina Mecânica API](https://github.com/geoscabio/oficina-mecanica-api).

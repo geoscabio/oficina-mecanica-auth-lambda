@@ -26,6 +26,7 @@ env:
   SSM_RDS_STATUS_PARAMETER: /oficina-mecanica/development/status/rds
   SSM_AUTH_LAMBDA_PREFIX: /oficina-mecanica/development/auth-lambda
   SSM_AUTH_LAMBDA_STATUS_PARAMETER: /oficina-mecanica/development/status/auth-lambda
+  DD_VERSION: sha-${{ github.sha }}
 
 jobs:
   resolve_action:
@@ -107,6 +108,7 @@ jobs:
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
       TERRAFORM_ACTION: ${{ needs.resolve_action.outputs.terraform_action }}
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
       AUTH_LAMBDA_JWT_SECRET: ${{ secrets.AUTH_LAMBDA_JWT_SECRET }}
       AUTH_LAMBDA_EXECUTION_ROLE_NAME: ${{ vars.AUTH_LAMBDA_EXECUTION_ROLE_NAME }}
       AUTH_LAMBDA_JWT_ISSUER: ${{ vars.AUTH_LAMBDA_JWT_ISSUER || 'oficina-mecanica-auth' }}
@@ -147,7 +149,7 @@ jobs:
 
           missing=""
 
-          for name in AUTH_LAMBDA_JWT_SECRET AUTH_LAMBDA_EXECUTION_ROLE_NAME; do
+          for name in AUTH_LAMBDA_JWT_SECRET AUTH_LAMBDA_EXECUTION_ROLE_NAME DD_API_KEY; do
             if [ -z "${!name}" ]; then
               missing="$missing $name"
             fi
@@ -335,6 +337,7 @@ jobs:
               "jwt_issuer": os.environ["AUTH_LAMBDA_JWT_ISSUER"],
               "jwt_audience": os.environ["AUTH_LAMBDA_JWT_AUDIENCE"],
               "jwt_expiration_minutes": int(os.environ["AUTH_LAMBDA_JWT_EXPIRATION_MINUTES"]),
+              "datadog_version": os.environ["DD_VERSION"],
           }
 
           target = Path(os.environ["TF_WORKING_DIRECTORY"]) / "zz_ci.auto.tfvars.json"
@@ -424,6 +427,7 @@ jobs:
     env:
       AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
       TERRAFORM_ACTION: ${{ needs.resolve_action.outputs.terraform_action }}
+      DD_API_KEY: ${{ secrets.DD_API_KEY }}
       AUTH_LAMBDA_JWT_SECRET: ${{ secrets.AUTH_LAMBDA_JWT_SECRET }}
       AUTH_LAMBDA_EXECUTION_ROLE_NAME: ${{ vars.AUTH_LAMBDA_EXECUTION_ROLE_NAME }}
       AUTH_LAMBDA_JWT_ISSUER: ${{ vars.AUTH_LAMBDA_JWT_ISSUER || 'oficina-mecanica-auth' }}
@@ -545,6 +549,7 @@ jobs:
               "jwt_issuer": os.environ["AUTH_LAMBDA_JWT_ISSUER"],
               "jwt_audience": os.environ["AUTH_LAMBDA_JWT_AUDIENCE"],
               "jwt_expiration_minutes": int(os.environ["AUTH_LAMBDA_JWT_EXPIRATION_MINUTES"]),
+              "datadog_version": os.environ["DD_VERSION"],
           }
 
           target = Path(os.environ["TF_WORKING_DIRECTORY"]) / "zz_ci.auto.tfvars.json"
@@ -566,7 +571,29 @@ jobs:
             ${{ env.TF_WORKING_DIRECTORY }}/terraform.tfstate.backup
           key: tfstate-auth-lambda-${{ inputs.environment_name }}-${{ github.run_id }}-${{ github.run_attempt }}
 
-      - name: "🔎 12 · Validar Auth Lambda real após apply"
+      - name: "🔐 12 · Popular API key no Secrets Manager"
+        if: env.TERRAFORM_ACTION == 'apply'
+        run: |
+          set -euo pipefail
+
+          if [ -z "$DD_API_KEY" ]; then
+            echo "::error::Configure o GitHub Environment secret DD_API_KEY."
+            exit 1
+          fi
+
+          echo "::add-mask::$DD_API_KEY"
+          datadog_secret_arn="$(terraform -chdir="$TF_WORKING_DIRECTORY" output -raw datadog_api_key_secret_arn)"
+          test -n "$datadog_secret_arn" || { echo "::error::ARN do secret Datadog não foi produzido pelo Terraform."; exit 1; }
+
+          aws secretsmanager put-secret-value \
+            --secret-id "$datadog_secret_arn" \
+            --secret-string "$DD_API_KEY" \
+            --query VersionId \
+            --output text > /dev/null
+
+          echo "API key do Datadog atualizada no Secrets Manager."
+
+      - name: "🔎 13 · Validar Auth Lambda real após apply"
         if: env.TERRAFORM_ACTION == 'apply'
         run: |
           set -euo pipefail
@@ -604,7 +631,7 @@ jobs:
 
           echo "Auth Lambda $function_name validada com sucesso na AWS e no SSM."
 
-      - name: "🔎 12 · Validar remoção real após destroy"
+      - name: "🔎 13 · Validar remoção real após destroy"
         if: env.TERRAFORM_ACTION == 'destroy'
         run: |
           set -euo pipefail
@@ -649,6 +676,6 @@ jobs:
 
           echo "Auth Lambda e parâmetros SSM publicados foram removidos."
 
-      - name: "🧹 13 · Remover variáveis sensíveis temporárias"
+      - name: "🧹 14 · Remover variáveis sensíveis temporárias"
         if: always()
         run: rm -f "$TF_WORKING_DIRECTORY/zz_ci.auto.tfvars.json"

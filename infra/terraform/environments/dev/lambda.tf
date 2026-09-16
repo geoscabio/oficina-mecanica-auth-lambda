@@ -39,7 +39,6 @@ resource "aws_lambda_function" "auth" {
 
   depends_on = [
     aws_cloudwatch_log_group.lambda,
-    aws_iam_role_policy.datadog_api_key_read,
     aws_vpc_security_group_egress_rule.lambda_sql_server_to_rds,
     terraform_data.vpc_ready,
     terraform_data.rds_ready,
